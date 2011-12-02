@@ -1,4 +1,4 @@
-Filters = require 'lib/BloomFilter'
+Filters = require 'BloomFilter'
 
 describe 'BloomFilter', ->
   bf = new Filters.BloomFilter(10)
