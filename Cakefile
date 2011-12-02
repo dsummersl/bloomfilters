@@ -7,8 +7,8 @@ task 'test','Run unit tests', (options) ->
     console.log stderr
     #console.log error if error != null
 
-task 'js','compile the javascript', (options)->
-  exec 'NODE_PATH="app" coffee app/lib/generatesources.coffee > public/data/computed.json', (error,stdout,stderr) ->
+task 'js','compile the coffeescript into javascript', (options)->
+  exec './node_modules/.bin/coffee coffee -c -o . coffee', (error,stdout,stderr) ->
     console.log stdout
     console.log stderr
     #console.log error if error != null
