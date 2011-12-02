@@ -1,6 +1,6 @@
 {
-  "name": "bloomfilters",
-  "id": "bloomfilters",
+  "name": "bloomjs",
+  "id": "bloomjs",
   "description": "A set of bloom filter implementations in pure coffee/javascipt.",
   "keywords": [
     "hash",
