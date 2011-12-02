@@ -6,14 +6,14 @@
     "hash",
     "bloom"
   ]
-  "homepage": "http://github.com/",
+  "homepage": "https://github.com/dsummersl/bloomjs",
   "author": {
     "name": "Dane Summers",
-    "url": "http://pinedesk.biz"
+    "url": "http://numerology.pinedesk.biz"
   },
   "repository": {
     "type": "git",
-    "url": "http://github.com/"
+    "url": "https://github.com/dsummersl/bloomjs.git"
   },
   "main" : "./BloomFilter.js",
   "version": "0.0.1",
