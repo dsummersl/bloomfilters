@@ -56,13 +56,12 @@ class SlicedBloomFilter
     return this
 
   has: (k) ->
-    allTrue = true
     for i in [0..@numSlices-1]
       parts = @computeIndexes(@allhashes[i].getIndex(k,@sliceLen))
       mask = 1 << parts[1]-1
-      allTrue = allTrue && (@slices[i][parts[0]] & mask) != 0
+      return false if (@slices[i][parts[0]] & mask) == 0
       #console.log "bitSet? #{k} @slices[#{i}][#{parts[0]}] = #{@slices[i][parts[0]]} & #{mask} = #{(@slices[i][parts[0]] & mask) != 0} of #{@slices[i]}"
-    return allTrue
+    return true
 
 ###
 # Strict filter: fail if you attempt to stuff more into it than its configured to handle.
@@ -74,6 +73,9 @@ class StrictSlicedBloomFilter extends SlicedBloomFilter
     throw "count should be <= capacity, no more room: #{@count} <=? #{@capacity}" if @count >= @capacity
     super(k)
 
+###
+# A hash function.
+###
 class HashGenerator
   constructor: (@hashFunction) ->
   # For a target length 'len', and a key, generate the hash, and then return

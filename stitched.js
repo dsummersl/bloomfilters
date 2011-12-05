@@ -125,14 +125,13 @@ SlicedBloomFilter = (function() {
   };
 
   SlicedBloomFilter.prototype.has = function(k) {
-    var allTrue, i, mask, parts, _ref;
-    allTrue = true;
+    var i, mask, parts, _ref;
     for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
       parts = this.computeIndexes(this.allhashes[i].getIndex(k, this.sliceLen));
       mask = 1 << parts[1] - 1;
-      allTrue = allTrue && (this.slices[i][parts[0]] & mask) !== 0;
+      if ((this.slices[i][parts[0]] & mask) === 0) return false;
     }
-    return allTrue;
+    return true;
   };
 
   return SlicedBloomFilter;
@@ -169,6 +168,10 @@ StrictSlicedBloomFilter = (function() {
   return StrictSlicedBloomFilter;
 
 })();
+
+/*
+# A hash function.
+*/
 
 HashGenerator = (function() {
 
