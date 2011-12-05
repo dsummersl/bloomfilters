@@ -3,8 +3,86 @@
   <head>
     <meta charset=utf-8>
     <title>Example BloomJS</title>
-    <script src="BloomFilter.js" type="text/javascript" charset="utf-8"></script>
+    <style type="text/css">
+      .button {
+        float: left;
+      }
+      .filterDesc {
+        float: left;
+      }
+      .filterCount {
+        float: left;
+      }
+      .floatBreak {
+        clear: left;
+      }
+    </style>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7/jquery.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="stitched.js" type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript">
+      var filters = require("BloomFilter");
+      var sections = [
+        {
+          filter: new filters.BloomFilter(),
+          name: 'Bloom Filter',
+          id: 'bloom'
+        },
+        {
+          filter: new filters.StrictBloomFilter(),
+          name: 'Strict Bloom Filter',
+          id: 'strictbloom'
+        },
+        {
+          filter: new filters.ScalableBloomFilter(),
+          name: 'Scalable Bloom Filter',
+          id: 'scalablebloom'
+        },
+      ];
+      $(function() {
+        // setup the UI for each section, and their filter
+        $.each(sections, function(i,v) {
+          $('#filters').append($('#filterUItemplate ').html());
+          $('#filters .filterUI').attr('id',v.id);
+          $('#'+ v.id).addClass('floatBreak');
+          $('#'+ v.id).removeClass('filterUI');
+          $('#'+ v.id +' .filterDesc').text(v.name +": ");
+        });
+        $('#filters button').click(function () {
+          var myid = $(this).parent().attr('id');
+          $.each(sections, function(i,v) {
+            if (v.id == myid) {
+              var start = v.filter.count;
+              for (var i=start;i<start+100;i++) {
+                v.filter.add("key-"+i);
+              }
+              var falsePositive = 0;
+              for (var i=0;i<v.filter.count;i++) {
+                if (v.filter.has("nokey-"+ i)) {
+                  falsePositive = falsePositive + 1;
+                }
+              }
+              $('#'+ v.id +' .filterCount').text(" Count: "+ v.filter.count +" False Positives: "+ falsePositive);
+            }
+          });
+        });
+      })
+    </script>
   </head>
   <body>
+    <p>
+    Here is an example of the three types of bloom filter. Click the button to add keys to the bloom filter. Each filter is set to a limit
+    of 100 keys - so as you add more keys the more limited bloom filters would expect to start obtaining some false positives.
+    </p>
+    <hr/>
+
+    <div id="filters"></div>
+
+    <div id="filterUItemplate" style="visibility: hidden;">
+      <div class="filterUI">
+        <div class="filterDesc">Description</div>
+        <button class="button">Add 100 Keys</button>
+        <div class="filterCount"></div>
+      </div>
+    </div>
   </body>
 </html>

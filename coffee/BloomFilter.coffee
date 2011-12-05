@@ -92,6 +92,8 @@ class HashGenerator
 # A bloom filter that grows automatically.
 # Consists of several SlicedBloomFilter's to ensure that the
 # filter maintains its % error.
+#
+# http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class ScalableBloomFilter
   constructor: (@startcapacity=100,@errorRate=.001,@filters=null,@stages=2,@r=0.85,@count=0)->
@@ -99,15 +101,20 @@ class ScalableBloomFilter
     # 4 is considered good for large growth (4+ orders of magnitude)
     # 2 is considered good for less growth (around 2 orders of magnitude)
     # k_i = k_0 + i*log2(r^-1)
+    @count = 0
     if not @filters
       @filters = [new StrictSlicedBloomFilter(@startcapacity,@errorRate)]
 
   add: (k) ->
+    @count = 0
     for f in @filters
+      @count += f.count
       if f.count < f.capacity
         #console.log "#{f.count} < #{f.capacity} ? #{k}"
         f.add(k)
+        @count++
         return this
+    @count++
     # None of the previous filters have space left, make a new filter. The new
     # filter will be larger by a factor of @stages, and its errorRatio will
     # also increase...

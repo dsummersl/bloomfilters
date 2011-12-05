@@ -44,12 +44,16 @@ describe 'ScalableBloomFilter', ->
   it 'would start with one filter', -> expect(bf.filters.length).toEqual(1)
 
   it 'would make a new filter after 10 inserts', ->
-    bf.add("key #{i}") for i in [1..11]
+    expect(bf.count).toEqual(0)
+    for i in [1..11]
+      bf.add("key #{i}")
+      expect(bf.count).toEqual(i)
     expect(bf.has("key #{i}")).toBeTruthy() for i in [1..11]
     expect(bf.filters.length).toEqual(2)
     expect(bf.filters[0].sliceLen < bf.filters[1].sliceLen).toBeTruthy()
     # the error rate of subsequent blooms should be tighter
     expect(bf.filters[0].errorRate > bf.filters[1].errorRate).toBeTruthy()
+    expect(bf.filters[0].capacity < bf.filters[1].capacity).toBeTruthy()
 
   it 'has a copy constructor', ->
     bf2 = new Filters.ScalableBloomFilter(bf.startcapacity,bf.errorRate,bf.filters,bf.stages,bf.r,bf.count)
