@@ -5,11 +5,15 @@
   "keywords": [
     "hash",
     "bloom"
-  ]
+  ],
   "homepage": "https://github.com/dsummersl/bloomfilters",
+  "bugs": {
+    "url": "https://github.com/dsummersl/bloomfilters",
+    "email": "dsummersl@yahoo.com"
+  },
   "author": {
     "name": "Dane Summers",
-    "url": "http://numerology.pinedesk.biz"
+    "email": "dsummersl@yahoo.com"
   },
   "repository": {
     "type": "git",
