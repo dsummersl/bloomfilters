@@ -20,7 +20,7 @@
     "url": "https://github.com/dsummersl/bloomfilters.git"
   },
   "main" : "./js/BloomFilter.js",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "dependencies": { 
     "jasmine-node": "~1.0.12",
     "coffee-script": "~1.1.3",
