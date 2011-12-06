@@ -65,12 +65,13 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1;
 
 SlicedBloomFilter = (function() {
 
-  function SlicedBloomFilter(capacity, errorRate, slices, count) {
-    var cnt, fnc, i, slice, _ref;
+  function SlicedBloomFilter(capacity, errorRate, slices, count, hashStartChar) {
+    var cnt, i, slice, _ref;
     this.capacity = capacity != null ? capacity : 100;
     this.errorRate = errorRate != null ? errorRate : .001;
     this.slices = slices != null ? slices : null;
     this.count = count != null ? count : 0;
+    if (hashStartChar == null) hashStartChar = 'h';
     this.bitsPerInt = 32;
     this.totalSize = Math.floor(this.capacity * Math.abs(Math.log(this.errorRate)) / Math.pow(Math.log(2), 2));
     if (this.totalSize < 0) {
@@ -78,16 +79,7 @@ SlicedBloomFilter = (function() {
     }
     this.numSlices = Math.ceil(Math.log(1 / this.errorRate) / Math.log(2));
     cnt = 0;
-    this.allhashes = [];
-    while (cnt++ < this.numSlices) {
-      fnc = function(cnt, k) {
-        var _this = this;
-        return function(k) {
-          return SHA1("h" + cnt, k);
-        };
-      };
-      this.allhashes.push(new HashGenerator(fnc(cnt)));
-    }
+    this.hashgenerator = new HashGenerator(hashStartChar);
     this.sliceLen = Math.ceil(this.totalSize / this.numSlices);
     if (!this.slices) {
       this.slices = [];
@@ -115,8 +107,9 @@ SlicedBloomFilter = (function() {
 
   SlicedBloomFilter.prototype.add = function(k) {
     var i, mask, parts, _ref;
+    this.hashgenerator.reset(k, this.sliceLen);
     for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
-      parts = this.computeIndexes(this.allhashes[i].getIndex(k, this.sliceLen));
+      parts = this.computeIndexes(this.hashgenerator.getIndex());
       mask = 1 << parts[1] - 1;
       this.slices[i][parts[0]] = this.slices[i][parts[0]] | mask;
     }
@@ -126,8 +119,9 @@ SlicedBloomFilter = (function() {
 
   SlicedBloomFilter.prototype.has = function(k) {
     var i, mask, parts, _ref;
+    this.hashgenerator.reset(k, this.sliceLen);
     for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
-      parts = this.computeIndexes(this.allhashes[i].getIndex(k, this.sliceLen));
+      parts = this.computeIndexes(this.hashgenerator.getIndex());
       mask = 1 << parts[1] - 1;
       if ((this.slices[i][parts[0]] & mask) === 0) return false;
     }
@@ -146,12 +140,13 @@ StrictSlicedBloomFilter = (function() {
 
   __extends(StrictSlicedBloomFilter, SlicedBloomFilter);
 
-  function StrictSlicedBloomFilter(capacity, errorRate, slices, count) {
+  function StrictSlicedBloomFilter(capacity, errorRate, slices, count, hashStartChar) {
     this.capacity = capacity != null ? capacity : 100;
     this.errorRate = errorRate != null ? errorRate : .001;
     this.slices = slices != null ? slices : null;
     this.count = count != null ? count : 0;
-    StrictSlicedBloomFilter.__super__.constructor.call(this, this.capacity, this.errorRate, this.slices, this.count);
+    if (hashStartChar == null) hashStartChar = 'h';
+    StrictSlicedBloomFilter.__super__.constructor.call(this, this.capacity, this.errorRate, this.slices, this.count, hashStartChar);
   }
 
   StrictSlicedBloomFilter.prototype.has = function(k) {
@@ -160,7 +155,7 @@ StrictSlicedBloomFilter = (function() {
 
   StrictSlicedBloomFilter.prototype.add = function(k) {
     if (this.count >= this.capacity) {
-      throw "count should be <= capacity, no more room: " + this.count + " <=? " + this.capacity;
+      throw "count should be <= capacity, no more room: " + this.count + " <= " + this.capacity;
     }
     return StrictSlicedBloomFilter.__super__.add.call(this, k);
   };
@@ -170,25 +165,47 @@ StrictSlicedBloomFilter = (function() {
 })();
 
 /*
-# A hash function.
+# A hash function. It is intended to be used to:
+#
+# 1: set the key/length of indexes
+# 2: fetch several random indexes.
+#
+# This class automatically handles the hash generation - minimizing the
+# total number of hashes generated.
 */
 
 HashGenerator = (function() {
 
-  function HashGenerator(hashFunction) {
-    this.hashFunction = hashFunction;
+  function HashGenerator(hashStartChar) {
+    this.hashStartChar = hashStartChar;
   }
 
-  HashGenerator.prototype.getIndex = function(key, len) {
-    var c, hash, hexCharsNeeded, vec;
-    hash = this.hashFunction(key);
-    vec = 0;
-    if (len > Math.pow(2, 31)) {
-      console.log("WARNING: watch out, I think this is too big. Key: '" + key + "' Len: " + len);
+  /*
+    # Anchor the generator on to a specific key and index length. Reset any hash
+    # data.
+  */
+
+  HashGenerator.prototype.reset = function(key, len) {
+    this.key = key;
+    this.len = len;
+    this.hashCnt = 0;
+    return this.hash = null;
+  };
+
+  HashGenerator.prototype.getIndex = function() {
+    var c, hexCharsNeeded;
+    if (!this.hash || this.hashIdx > this.hash.length - 8) {
+      this.hashCnt++;
+      this.hashIdx = 0;
+      this.hash = SHA1("" + this.hashStartChar + "-" + this.hashCnt, this.key);
     }
-    hexCharsNeeded = parseInt(len / 4);
-    c = parseInt(hash.slice(0, 8), 16);
-    return c % len;
+    if (this.len > Math.pow(2, 31)) {
+      console.log("WARNING: watch out, I think this is too big. Key: '" + this.key + "' Len: " + this.len);
+    }
+    hexCharsNeeded = parseInt(this.len / 4);
+    c = parseInt(this.hash.slice(this.hashIdx, this.hashIdx + 8), 16);
+    this.hashIdx += 8;
+    return c % this.len;
   };
 
   return HashGenerator;
@@ -209,12 +226,12 @@ ScalableBloomFilter = (function() {
     this.startcapacity = startcapacity != null ? startcapacity : 100;
     this.errorRate = errorRate != null ? errorRate : .001;
     this.filters = filters != null ? filters : null;
-    this.stages = stages != null ? stages : 2;
+    this.stages = stages != null ? stages : 4;
     this.r = r != null ? r : 0.85;
     this.count = count != null ? count : 0;
     this.count = 0;
     if (!this.filters) {
-      this.filters = [new StrictSlicedBloomFilter(this.startcapacity, this.errorRate)];
+      this.filters = [new StrictSlicedBloomFilter(this.startcapacity, this.errorRate, null, 0, 'h0')];
     }
   }
 
@@ -232,7 +249,7 @@ ScalableBloomFilter = (function() {
       }
     }
     this.count++;
-    this.filters.push(new StrictSlicedBloomFilter(this.startcapacity * Math.pow(this.stages, this.filters.length), this.errorRate * Math.pow(this.r, this.filters.length)));
+    this.filters.push(new StrictSlicedBloomFilter(this.startcapacity * Math.pow(this.stages, this.filters.length), this.errorRate * Math.pow(this.r, this.filters.length), null, 0, "h" + this.filters.length));
     this.filters[this.filters.length - 1].add(k);
     return this;
   };

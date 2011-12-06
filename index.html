@@ -59,6 +59,7 @@
               for (var i=0;i<v.filter.count;i++) {
                 if (v.filter.has("nokey-"+ i)) {
                   falsePositive = falsePositive + 1;
+                  console.log("["+ v.name +"] False Positive: nokey-"+ i);
                 }
               }
               $('#'+ v.id +' .filterCount').text(" Count: "+ v.filter.count +" False Positives: "+ falsePositive);
