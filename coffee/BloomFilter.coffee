@@ -10,7 +10,7 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class SlicedBloomFilter
-  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,hashStartChar='h')->
+  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h')->
     @bitsPerInt = 32
     # P = p^k = @errorRate
     # n = @capacity
@@ -23,10 +23,10 @@ class SlicedBloomFilter
     # k = log2(1/P)
     @numSlices = Math.ceil(Math.log(1/@errorRate)/Math.log(2))
     cnt = 0
-    @hashgenerator = new HashGenerator(hashStartChar)
     #console.log("num slices = #{@numSlices} - #{@totalSize}")
     # m = M / k
     @sliceLen = Math.ceil(@totalSize / @numSlices)
+    @hashgenerator = new HashGenerator(@hashStartChar,@sliceLen)
     if not @slices
       @slices = []
       for i in [0..@numSlices-1]
@@ -42,7 +42,7 @@ class SlicedBloomFilter
   computeIndexes: (bit) -> [Math.floor(bit / @bitsPerInt), Math.ceil(bit % @bitsPerInt)]
 
   add: (k) ->
-    @hashgenerator.reset(k,@sliceLen)
+    @hashgenerator.reset(k)
     for i in [0..@numSlices-1]
       parts = @computeIndexes(@hashgenerator.getIndex())
       mask = 1 << parts[1]-1
@@ -54,7 +54,7 @@ class SlicedBloomFilter
     return this
 
   has: (k) ->
-    @hashgenerator.reset(k,@sliceLen)
+    @hashgenerator.reset(k)
     for i in [0..@numSlices-1]
       parts = @computeIndexes(@hashgenerator.getIndex())
       mask = 1 << parts[1]-1
@@ -66,7 +66,7 @@ class SlicedBloomFilter
 # Strict filter: fail if you attempt to stuff more into it than its configured to handle.
 ###
 class StrictSlicedBloomFilter extends SlicedBloomFilter
-  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,hashStartChar='h') -> super(@capacity,@errorRate,@slices,@count,hashStartChar)
+  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h') -> super(@capacity,@errorRate,@slices,@count,@hashStartChar)
   has: (k) -> super(k)
   add: (k) ->
     throw "count should be <= capacity, no more room: #{@count} <= #{@capacity}" if @count >= @capacity
@@ -82,32 +82,37 @@ class StrictSlicedBloomFilter extends SlicedBloomFilter
 # total number of hashes generated.
 ###
 class HashGenerator
-  constructor: (@hashStartChar) ->
+  constructor: (@hashStartChar,@len) ->
+    @hexCharsNeeded = Math.ceil(Math.log(@len) / Math.log(16))
 
   ###
-  # Anchor the generator on to a specific key and index length. Reset any hash
-  # data.
+  # Anchor the generator on to a specific key. Reset any hash data.
   ###
-  reset: (key,len) ->
+  reset: (key) ->
     @key = key
-    @len = len
     @hashCnt = 0
-    @hash = null
+    @hash = ""
+    #console.log "reset"
 
   # For a target length and key defined by 'reset', get an index (0-based) sized to 'len'.
   getIndex: () ->
-    if not @hash or @hashIdx > @hash.length-8
+    # here I'm trying to generate as few calls to the SHA1 method as possible by
+    # just using up the minimum number of hex chars required to generate an index
+    # of length @len -- whenever we get to a point that we don't have enough
+    # characters to generate an index, only then do we call SHA1 (but we keep what
+    # we couldn't use in the last call).
+    if @hash == "" or @hashIdx > @hash.length-@hexCharsNeeded
+      #console.log "from #{@hashIdx} to #{@hash.length}: #{@hash.slice(@hashIdx,@hash.length)}"
+      @hash = SHA1("#{@hashStartChar}-#{@hashCnt}-#{@key}",@key) + @hash.slice(@hashIdx,@hash.length)
       @hashCnt++
       @hashIdx = 0
-      @hash = SHA1("#{@hashStartChar}-#{@hashCnt}",@key)
-      #console.log "new hash for key #{@key}: #{@hash}"
+      #console.log "new hash for key #{@key}: #{@hash} - uses: #{@hash.length / @hexCharsNeeded} #{@hexCharsNeeded}"
+    #console.log "."
     console.log("WARNING: watch out, I think this is too big. Key: '#{@key}' Len: #{@len}") if (@len > Math.pow(2,31))
-    # (2^4)^8
-    hexCharsNeeded = parseInt(@len / 4)
-    c = parseInt(@hash.slice(@hashIdx, @hashIdx+8), 16)
-    #console.log "#{@len}: #{@hash.slice(@hashIdx, @hashIdx+8)} -- #{c} (#{hexCharsNeeded}) - #{@hashIdx} #{@hash.length}"
-    @hashIdx += 8
-    return c % @len
+    c = parseInt(@hash.slice(@hashIdx, @hashIdx+@hexCharsNeeded), 16)
+    #console.log "#{@key}: #{@hash[@hashIdx-1]}-#{@hash.slice(@hashIdx, @hashIdx+@hexCharsNeeded)}: #{@hexCharsNeeded}-#{@len}-#{@hexCharsNeeded} - #{c} (#{@hexCharsNeeded})"
+    @hashIdx += @hexCharsNeeded
+    return c
 
 ###
 # A bloom filter that grows automatically.
@@ -117,14 +122,15 @@ class HashGenerator
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class ScalableBloomFilter
-  constructor: (@startcapacity=100,@errorRate=.001,@filters=null,@stages=4,@r=0.85,@count=0)->
+  constructor: (@startcapacity=100,@targetErrorRate=.001,@filters=null,@stages=4,@r=0.85,@count=0)->
     # number of stages:
     # 4 is considered good for large growth (4+ orders of magnitude)
     # 2 is considered good for less growth (around 2 orders of magnitude)
     # k_i = k_0 + i*log2(r^-1)
     @count = 0
+    @P_0 = @targetErrorRate*(1-@r)
     if not @filters
-      @filters = [new StrictSlicedBloomFilter(@startcapacity,@errorRate,null,0,'h0')]
+      @filters = [new StrictSlicedBloomFilter(@startcapacity,@P_0,null,0,'h0')]
 
   add: (k) ->
     @count = 0
@@ -138,9 +144,9 @@ class ScalableBloomFilter
     @count++
     # None of the previous filters have space left, make a new filter. The new
     # filter will be larger by a factor of @stages, and its errorRatio will
-    # also increase...
-    #console.log "new cap & rate: #{@startcapacity*Math.pow(@stages,@filters.length)} and #{@errorRate*Math.pow(@r,@filters.length)}"
-    @filters.push(new StrictSlicedBloomFilter(@startcapacity*Math.pow(@stages,@filters.length),@errorRate*Math.pow(@r,@filters.length),null,0,"h#{@filters.length}"))
+    # also increase:
+    #console.log "new cap & rate: #{@startcapacity*Math.pow(@stages,@filters.length)} and #{@P_0*Math.pow(@r,@filters.length)}"
+    @filters.push(new StrictSlicedBloomFilter(@startcapacity*Math.pow(@stages,@filters.length),@P_0*Math.pow(@r,@filters.length),null,0,"h#{@filters.length}"))
     @filters[@filters.length-1].add(k)
     return this
 

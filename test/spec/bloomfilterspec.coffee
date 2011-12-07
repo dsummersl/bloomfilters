@@ -39,7 +39,7 @@ describe 'BloomFilter', ->
     expect(bf.computeIndexes(35)).toEqual([1,3])
 
 describe 'ScalableBloomFilter', ->
-  bf = new Filters.ScalableBloomFilter(10)
+  bf = new Filters.ScalableBloomFilter(10,0.00001)
 
   it 'would start with one filter', -> expect(bf.filters.length).toEqual(1)
 
