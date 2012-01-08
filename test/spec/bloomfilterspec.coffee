@@ -114,6 +114,8 @@ describe 'ScalableBloomFilter', ->
   it 'has a copy constructor', ->
     bf2 = new Filters.ScalableBloomFilter(bf.startcapacity,bf.errorRate,bf.filters,bf.stages,bf.r,bf.count)
     expect(bf2.has("key #{i}")).toBeTruthy() for i in [1..11]
+    robf = bf2.readOnlyInstance()
+    expect(robf.has("key #{i}")).toBeTruthy() for i in [1..11]
  
  describe 'ConciseBitSet', ->
   cbs = new Filters.ConciseBitSet()
