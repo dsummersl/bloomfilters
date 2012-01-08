@@ -48,7 +48,7 @@
     };
   }
   return this.require.define;
-}).call(this)({"BloomFilter": function(exports, require, module) {var ConciseBitSet, HashGenerator, SHA1, ScalableBloomFilter, SlicedBloomFilter, StrictSlicedBloomFilter;
+}).call(this)({"BloomFilter": function(exports, require, module) {var ArrayBitSet, BitSet, ConciseBitSet, HashGenerator, SHA1, ScalableBloomFilter, SlicedBloomFilter, StrictSlicedBloomFilter;
 var __hasProp = Object.prototype.hasOwnProperty, __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor; child.__super__ = parent.prototype; return child; };
 
 SHA1 = require('crypto/sha1').hex_hmac_sha1;
@@ -66,7 +66,7 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1;
 SlicedBloomFilter = (function() {
 
   function SlicedBloomFilter(capacity, errorRate, slices, count, hashStartChar) {
-    var cnt, i, slice, _ref;
+    var cnt, i, _ref;
     this.capacity = capacity != null ? capacity : 100;
     this.errorRate = errorRate != null ? errorRate : .001;
     this.slices = slices != null ? slices : null;
@@ -84,13 +84,7 @@ SlicedBloomFilter = (function() {
     if (!this.slices) {
       this.slices = [];
       for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
-        slice = [];
-        cnt = 0;
-        while (cnt < this.sliceLen) {
-          slice.push(0);
-          cnt += this.bitsPerInt;
-        }
-        this.slices.push(slice);
+        this.slices.push(new ArrayBitSet(this.sliceLen, this.bitsPerInt));
       }
     }
     if (this.slices.length !== this.numSlices) {
@@ -101,31 +95,35 @@ SlicedBloomFilter = (function() {
     }
   }
 
-  SlicedBloomFilter.prototype.computeIndexes = function(bit) {
-    return [Math.floor(bit / this.bitsPerInt), Math.ceil(bit % this.bitsPerInt)];
-  };
-
   SlicedBloomFilter.prototype.add = function(k) {
-    var i, mask, parts, _ref;
+    var i, _ref;
     this.hashgenerator.reset(k);
     for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
-      parts = this.computeIndexes(this.hashgenerator.getIndex());
-      mask = 1 << parts[1] - 1;
-      this.slices[i][parts[0]] = this.slices[i][parts[0]] | mask;
+      this.slices[i].set(this.hashgenerator.getIndex());
     }
     this.count++;
     return this;
   };
 
   SlicedBloomFilter.prototype.has = function(k) {
-    var i, mask, parts, _ref;
+    var i, index, _ref;
     this.hashgenerator.reset(k);
     for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
-      parts = this.computeIndexes(this.hashgenerator.getIndex());
-      mask = 1 << parts[1] - 1;
-      if ((this.slices[i][parts[0]] & mask) === 0) return false;
+      index = this.hashgenerator.getIndex();
+      if (!this.slices[i].has(index)) return false;
     }
     return true;
+  };
+
+  SlicedBloomFilter.prototype.readOnlyInstance = function() {
+    var ROslices, s, _i, _len, _ref;
+    ROslices = [];
+    _ref = this.slices;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      s = _ref[_i];
+      ROslices.push(s.toConciseBitSet());
+    }
+    return new SlicedBloomFilter(this.capacity, this.errorRate, ROslices, this.count, this.hashStartChar);
   };
 
   return SlicedBloomFilter;
@@ -212,19 +210,161 @@ HashGenerator = (function() {
 })();
 
 /*
+# abstract bit set class. common handy methods.
+*/
+
+BitSet = (function() {
+
+  function BitSet() {}
+
+  BitSet.prototype.has = function(b) {
+    return false;
+  };
+
+  BitSet.prototype.bitStringAsWord = function(str) {
+    var b, bit, offset, _i, _len;
+    b = 0;
+    offset = 31;
+    for (_i = 0, _len = str.length; _i < _len; _i++) {
+      bit = str[_i];
+      if (bit !== ' ') b = b | (parseInt(bit) << offset--);
+    }
+    return b;
+  };
+
+  BitSet.prototype.wordAsBitString = function(w) {
+    var i, str;
+    str = "";
+    for (i = 31; i >= 0; i--) {
+      if ((i + 1) % 4 === 0 && i !== 31) str += " ";
+      if (this.bitOfWordSet(w, i)) {
+        str += "1";
+      } else {
+        str += "0";
+      }
+    }
+    return str;
+  };
+
+  BitSet.prototype.bitOfWordSet = function(w, i) {
+    return (w & (1 << i)) !== 0;
+  };
+
+  BitSet.prototype.bitsOfWordSet = function(w) {
+    var cnt, i;
+    cnt = 0;
+    for (i = 0; i <= 31; i++) {
+      if (this.bitOfWordSet(w, i)) cnt++;
+    }
+    return cnt;
+  };
+
+  BitSet.prototype.wordMatches = function(w, p) {
+    var allMatch, i;
+    allMatch = true;
+    for (i = 0; i <= 31; i++) {
+      allMatch = this.bitOfWordSet(w, i) === this.bitOfWordSet(p, i);
+      if (!allMatch) return false;
+    }
+    return true;
+  };
+
+  return BitSet;
+
+})();
+
+/*
+# Straight up array based bit set (well, we use the bits of the ints in the array).
+*/
+
+ArrayBitSet = (function() {
+
+  __extends(ArrayBitSet, BitSet);
+
+  function ArrayBitSet(size, bitsPerInt) {
+    var cnt;
+    this.size = size;
+    this.bitsPerInt = bitsPerInt != null ? bitsPerInt : 32;
+    this.data = [];
+    cnt = 0;
+    while (cnt < this.size) {
+      this.data.push(0);
+      cnt += this.bitsPerInt;
+    }
+  }
+
+  ArrayBitSet.prototype.computeIndexes = function(bit) {
+    return [Math.floor(bit / this.bitsPerInt), Math.ceil(bit % this.bitsPerInt)];
+  };
+
+  ArrayBitSet.prototype.set = function(bit) {
+    var mask, parts;
+    if (bit >= this.size * this.bitsPerInt) {
+      throw "Array is setup for " + (this.size * this.bitsPerInt) + " bits, but bit " + this.bit + " was attempted.";
+    }
+    parts = this.computeIndexes(bit);
+    mask = 1 << parts[1] - 1;
+    return this.data[parts[0]] = this.data[parts[0]] | mask;
+  };
+
+  ArrayBitSet.prototype.has = function(bit) {
+    var mask, parts;
+    if (bit >= this.size * this.bitsPerInt) return false;
+    parts = this.computeIndexes(bit);
+    mask = 1 << parts[1] - 1;
+    return (this.data[parts[0]] & mask) !== 0;
+  };
+
+  ArrayBitSet.prototype.toConciseBitSet = function() {
+    var cbs, cnt, i, max, _ref;
+    cbs = new ConciseBitSet();
+    cnt = 0;
+    max = 0;
+    for (i = 0, _ref = this.size * this.bitsPerInt; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
+      if (this.has(i)) {
+        cnt++;
+        max = i;
+        cbs.add(i);
+      }
+    }
+    return cbs;
+  };
+
+  ArrayBitSet.prototype.printObject = function() {
+    var i, w, _len, _ref, _results;
+    console.log("size = " + this.size);
+    _ref = this.data;
+    _results = [];
+    for (i = 0, _len = _ref.length; i < _len; i++) {
+      w = _ref[i];
+      _results.push(console.log("word " + i + " : " + (this.wordAsBitString(w))));
+    }
+    return _results;
+  };
+
+  return ArrayBitSet;
+
+})();
+
+/*
 # CONCISE bit set.
+# unfortunately you can't use the CONCISE bit for for a writeable bloom filter so
+# we are just using it for the read only version - for its space saving features.
 */
 
 ConciseBitSet = (function() {
 
-  function ConciseBitSet(words, top, max) {
+  __extends(ConciseBitSet, BitSet);
+
+  function ConciseBitSet(words, top, max, count) {
     this.words = words != null ? words : [];
     this.top = top != null ? top : 0;
     this.max = max != null ? max : 0;
+    this.count = count != null ? count : 0;
   }
 
-  ConciseBitSet.prototype.append = function(i) {
-    var b, f;
+  ConciseBitSet.prototype.add = function(i) {
+    var b, f, zeroBlocks;
     if (this.words.length === 0) {
       f = Math.floor(i / 31.0);
       switch (f) {
@@ -243,9 +383,9 @@ ConciseBitSet = (function() {
     } else {
       b = i - this.max + (this.max % 31);
       if (b >= 31) {
-        f = Math.floor(b / 31.0) - 1;
+        zeroBlocks = Math.floor(b / 31.0) - 1;
         b = b % 31;
-        if (f > 0) this.appendSequence(f, 0);
+        if (zeroBlocks > 0) this.appendSequence(zeroBlocks, 0);
         this.appendLiteral(0x80000000 | (1 << b));
       } else {
         this.setWord(this.top, this.words[this.top] | (1 << b));
@@ -257,15 +397,19 @@ ConciseBitSet = (function() {
         }
       }
     }
-    return this.max = i;
+    this.max = i;
+    return this.count++;
   };
 
   ConciseBitSet.prototype.appendLiteral = function(w) {
+    if (this.top === 0 && this.wordMatches(w, 0x80000000) && this.wordMatches(this.words[0], 0x01ffffff)) {
+      return;
+    }
     if (this.words.length === 0) {
       this.top = 0;
       return this.setWord(this.top, w);
     } else if (this.wordMatches(w, 0x80000000)) {
-      if (this.words[this.top] === 0x80000000) {
+      if (this.wordMatches(this.words[this.top], 0x80000000)) {
         return this.setWord(this.top, 1);
       } else if ((this.words[this.top] & 0xc0000000) === 0) {
         return this.setWord(this.top, this.words[this.top] + 1);
@@ -277,11 +421,11 @@ ConciseBitSet = (function() {
       }
     } else if (this.wordMatches(w, 0xffffffff)) {
       if (this.wordMatches(this.words[this.top], 0xffffffff)) {
-        return this.setWord(this.top, 0x40000001);
+        return this.setWord(this.top, 0x40000000 | 1);
       } else if (this.wordMatches(this.words[this.top] & 0xc0000000, 0x40000000)) {
         return this.setWord(this.top, this.words[this.top] + 1);
       } else if (this.containsOneBit(~this.words[this.top])) {
-        return this.setWord(this.top, 0x40000001 | ((1 + this.trailingZeros(this.words[this.top])) << 25));
+        return this.setWord(this.top, 0x40000000 | 1 | ((1 + this.trailingZeros(~this.words[this.top])) << 25));
       } else {
         this.top++;
         return this.setWord(this.top, w);
@@ -293,34 +437,34 @@ ConciseBitSet = (function() {
   };
 
   ConciseBitSet.prototype.appendSequence = function(l, t) {
-    t = t & 0x40000001;
+    t = t & 0x40000000;
     if (l === 1) {
-      return this.appendLiteral(0x80000000);
-    } else if (l === 1 || this.wordMatches(t, 0x40000000)) {
-      return this.appendLiteral(0xffffffff);
+      if (t === 0) {
+        return this.appendLiteral(0x80000000);
+      } else {
+        return this.appendLiteral(0xffffffff);
+      }
     } else if (this.words.length === 0) {
       this.top = 0;
       return this.setWord(this.top, t | (l - 1));
     } else if (this.isLiteral(this.words[this.top])) {
       if (t === 0 && this.wordMatches(this.words[this.top], 0x80000000)) {
         return this.setWord(this.top, l);
-      } else if (this.wordMatches(t, 0x40000001) || this.wordMatches(this.words[this.top], 0xffffffff)) {
+      } else if (this.wordMatches(t, 0x40000000) || this.wordMatches(this.words[this.top], 0xffffffff)) {
         return this.setWord(this.top, 0x40000000 | l);
       } else if (t === 0 && this.containsOneBit(0x7fffffff & this.words[this.top])) {
         return this.setWord(this.top, l | ((1 + this.trailingZeros(this.words[this.top])) << 25));
-      } else if (this.wordMatches(t, 0x40000001) && this.containsOneBit(~this.words[this.top])) {
-        return this.setWord(this.top, 0x40000000 | l | ((1 + this.trailingZeros(this.words[this.top])) << 25));
+      } else if (this.wordMatches(t, 0x40000000) && this.containsOneBit(~this.words[this.top])) {
+        return this.setWord(this.top, 0x40000000 | l | ((1 + this.trailingZeros(~this.words[this.top])) << 25));
       } else {
         this.top++;
         return this.setWord(this.top, t | (l - 1));
       }
+    } else if (this.wordMatches(this.words[this.top] & 0xc0000000, t)) {
+      return this.setWord(this.top, this.words[this.top] + l);
     } else {
-      if (this.wordMatches(this.words[this.top] & 0xc0000000, t)) {
-        return this.setWord(this.top, this.words[this.top] + l);
-      } else {
-        this.top++;
-        return this.setWord(this.top, t | (l - 1));
-      }
+      this.top++;
+      return this.setWord(this.top, t | (l - 1));
     }
   };
 
@@ -339,6 +483,7 @@ ConciseBitSet = (function() {
     var i, w, _len, _ref, _results;
     console.log("top = " + this.top);
     console.log("max = " + this.max);
+    console.log("count = " + this.count);
     _ref = this.words;
     _results = [];
     for (i = 0, _len = _ref.length; i < _len; i++) {
@@ -350,54 +495,6 @@ ConciseBitSet = (function() {
       }
     }
     return _results;
-  };
-
-  ConciseBitSet.prototype.bitStringAsWord = function(str) {
-    var b, bit, offset, _i, _len;
-    b = 0;
-    offset = 31;
-    for (_i = 0, _len = str.length; _i < _len; _i++) {
-      bit = str[_i];
-      if (bit !== ' ') b = b | (parseInt(bit) << offset--);
-    }
-    return b;
-  };
-
-  ConciseBitSet.prototype.wordAsBitString = function(w) {
-    var i, str;
-    str = "";
-    for (i = 31; i >= 0; i--) {
-      if ((i + 1) % 4 === 0 && i !== 31) str += " ";
-      if (this.bitOfWordSet(w, i)) {
-        str += "1";
-      } else {
-        str += "0";
-      }
-    }
-    return str;
-  };
-
-  ConciseBitSet.prototype.bitOfWordSet = function(w, i) {
-    return (w & (1 << i)) !== 0;
-  };
-
-  ConciseBitSet.prototype.bitsOfWordSet = function(w) {
-    var cnt, i;
-    cnt = 0;
-    for (i = 0; i <= 31; i++) {
-      if (this.bitOfWordSet(w, i)) cnt++;
-    }
-    return cnt;
-  };
-
-  ConciseBitSet.prototype.wordMatches = function(w, p) {
-    var allMatch, i;
-    allMatch = true;
-    for (i = 0; i <= 31; i++) {
-      allMatch = this.bitOfWordSet(w, i) === this.bitOfWordSet(p, i);
-      if (!allMatch) return false;
-    }
-    return true;
   };
 
   ConciseBitSet.prototype.isLiteral = function(w) {
@@ -432,24 +529,35 @@ ConciseBitSet = (function() {
     return cnt;
   };
 
-  ConciseBitSet.prototype.hasNumber = function(n) {
-    var height, w, _i, _len, _ref;
-    height = 0;
+  ConciseBitSet.prototype.has = function(n) {
+    var bit, block, w, _i, _len, _ref;
+    if (n > this.max || this.words.length === 0 || n < 0) return false;
+    block = Math.floor(n / 31.0);
+    bit = n % 31;
     _ref = this.words;
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       w = _ref[_i];
       if (this.isLiteral(w)) {
-        if (n - height <= 31) return this.bitOfWordSet(w, n - height);
-        height += 31;
+        if (block === 0) return (w & (1 << bit)) !== 0;
+        block--;
+        /*
+                if n - height <= 31
+                  return @bitOfWordSet(w,n-height)
+                height += 31
+        */
       } else if (this.is01Fill(w)) {
-        if (n - height <= 31 + 31 * (w & 0x7ffffff)) return true;
-        height += 31 + 31 * (w & 0x7ffffff);
+        if (block === 0 && this.wordMatches(0x0000001f & (w >> 25) - 1, bit)) {
+          return false;
+        }
+        block -= (w & 0x01FFFFFF) + 1;
+        if (block < 0) return true;
       } else if (this.is00Fill(w)) {
-        if (n - height <= 31 + 31 * (w & 0x7ffffff)) return false;
-        height += 31 + 31 * (w & 0x7ffffff);
+        if (block === 0 && this.wordMatches((w >> 25) - 1, bit)) return true;
+        block -= (w & 0x01FFFFFF) + 1;
+        if (block < 0) return false;
       }
-      if (n < height) return false;
     }
+    return false;
   };
 
   ConciseBitSet.prototype.containsOneBit = function(w) {
@@ -533,6 +641,17 @@ ScalableBloomFilter = (function() {
     return false;
   };
 
+  ScalableBloomFilter.prototype.readOnlyInstance = function() {
+    var ROfilters, f, _i, _len, _ref;
+    ROfilters = [];
+    _ref = this.filters;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      f = _ref[_i];
+      ROfilters.push(f.readOnlyInstance());
+    }
+    return new ScalableBloomFilter(this.startcapacity, this.targetErrorRate, ROfilters, this.stages, this.r, this.count);
+  };
+
   return ScalableBloomFilter;
 
 })();
@@ -541,7 +660,8 @@ module.exports = {
   BloomFilter: SlicedBloomFilter,
   StrictBloomFilter: StrictSlicedBloomFilter,
   ScalableBloomFilter: ScalableBloomFilter,
-  ConciseBitSet: ConciseBitSet
+  ConciseBitSet: ConciseBitSet,
+  ArrayBitSet: ArrayBitSet
 };
 }, "crypto/md5": function(exports, require, module) {/*
  * A JavaScript implementation of the RSA Data Security, Inc. MD5 Message
