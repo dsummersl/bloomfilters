@@ -11,7 +11,7 @@ describe 'BloomFilter', ->
     expect(bf.has("two")).toBeFalsy()
     bf.add("one")
     expect(bf.count).toEqual(1)
-    expect(bf.has("one")).toBeTruthy()
+    expect(bf.has("one")).toBeTruthy() # <!-- trouble
     expect(bf.has("two")).toBeFalsy()
 
   it 'test capacity of 10 - add 10 things', ->
@@ -32,11 +32,13 @@ describe 'BloomFilter', ->
     cnt=0
     expect(bf.has("k#{cnt++}")).toBeTruthy() while cnt < 10
 
+describe 'ArrayBitSet', ->
+  abs = new Filters.ArrayBitSet(100)
   it 'can convert a bit offset to the number and bit of the number', ->
-    expect(bf.computeIndexes(0)).toEqual([0,0])
-    expect(bf.computeIndexes(1)).toEqual([0,1])
-    expect(bf.computeIndexes(32)).toEqual([1,0])
-    expect(bf.computeIndexes(35)).toEqual([1,3])
+    expect(abs.computeIndexes(0)).toEqual([0,0])
+    expect(abs.computeIndexes(1)).toEqual([0,1])
+    expect(abs.computeIndexes(32)).toEqual([1,0])
+    expect(abs.computeIndexes(35)).toEqual([1,3])
 
 describe 'ScalableBloomFilter', ->
   bf = new Filters.ScalableBloomFilter(10,0.00001)
@@ -48,7 +50,7 @@ describe 'ScalableBloomFilter', ->
     for i in [1..11]
       bf.add("key #{i}")
       expect(bf.count).toEqual(i)
-    expect(bf.has("key #{i}")).toBeTruthy() for i in [1..11]
+    expect(bf.has("key #{i}")).toBeTruthy() for i in [1..11] # <--- failure
     expect(bf.filters.length).toEqual(2)
     expect(bf.filters[0].sliceLen < bf.filters[1].sliceLen).toBeTruthy()
     # the error rate of subsequent blooms should be tighter
@@ -66,31 +68,31 @@ describe 'ScalableBloomFilter', ->
 
   it 'would contain a number if you added it - one word', ->
     cbs = new Filters.ConciseBitSet()
-    cbs.append(1)
+    cbs.add(1)
     expect(cbs.max).toEqual(1)
     expect(cbs.bitCount()).toEqual(1)
-    expect(cbs.hasNumber(1)).toBeTruthy()
-    cbs.append(10)
+    expect(cbs.has(1)).toBeTruthy()
+    cbs.add(10)
     expect(cbs.max).toEqual(10)
     expect(cbs.bitCount()).toEqual(2)
-    expect(cbs.hasNumber(i)).toBeFalsy() for i in [2..9]
-    expect(cbs.hasNumber(10)).toBeTruthy()
+    expect(cbs.has(i)).toBeFalsy() for i in [2..9]
+    expect(cbs.has(10)).toBeTruthy()
 
   it 'would work for each type', ->
     cbs = new Filters.ConciseBitSet()
-    cbs.append(i) for i in [0..30]
+    cbs.add(i) for i in [0..30]
     expect(cbs.max).toEqual(30)
     expect(cbs.bitCount()).toEqual(31)
-    expect(cbs.hasNumber(i)).toBeTruthy() for i in [0..30]
+    expect(cbs.has(i)).toBeTruthy() for i in [0..30]
     expect(cbs.top).toEqual(0)
     expect(cbs.max).toEqual(30)
 
-    cbs.append(31)
+    cbs.add(31)
     expect(cbs.bitCount()).toEqual(32)
     expect(cbs.top).toEqual(1)
     expect(cbs.max).toEqual(31)
 
-    cbs.append(32)
+    cbs.add(32)
     expect(cbs.bitCount()).toEqual(33)
     expect(cbs.top).toEqual(1)
     ###
@@ -99,17 +101,17 @@ describe 'ScalableBloomFilter', ->
 
   it 'would work for the paper example.', ->
     cbs = new Filters.ConciseBitSet()
-    cbs.append(3)
-    cbs.append(5)
+    cbs.add(3)
+    cbs.add(5)
     expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 1000')).toEqual(cbs.words[0])
-    cbs.append(i) for i in [31..93]
+    cbs.add(i) for i in [31..93]
     expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 1000')).toEqual(cbs.words[0])
     expect(cbs.bitStringAsWord('0100 0000 0000 0000 0000 0000 0000 0001')).toEqual(cbs.words[1])
     expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0000 0001')).toEqual(cbs.words[2])
-    cbs.append(1024)
-    cbs.append(1028)
+    cbs.add(1024)
+    cbs.add(1028)
     #cbs.printObject()
-    cbs.append(1040187422)
+    cbs.add(1040187422)
     expect(cbs.max).toEqual(1040187422)
     expect(cbs.top).toEqual(5)
     expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 0010')).toEqual(cbs.words[3])

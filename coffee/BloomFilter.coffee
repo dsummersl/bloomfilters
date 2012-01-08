@@ -9,8 +9,8 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1
 #
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
-class SlicedBloomFilter
-  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h')->
+class SlicedBloomFilter# {{{
+  constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h',@sliceGenerator=new BitSetGenerator())->
     @bitsPerInt = 32
     # P = p^k = @errorRate
     # n = @capacity
@@ -29,25 +29,15 @@ class SlicedBloomFilter
     @hashgenerator = new HashGenerator(@hashStartChar,@sliceLen)
     if not @slices
       @slices = []
-      for i in [0..@numSlices-1]
-        slice = []
-        cnt = 0
-        while cnt < @sliceLen
-          slice.push(0)
-          cnt += @bitsPerInt
-        @slices.push(slice)
+      @slices.push(@sliceGenerator.newSet(@sliceLen)) for i in [0..@numSlices-1]
     throw "numSlices doesn't match slices: #{@slices.length} != #{@numSlices}" if @slices.length != @numSlices
     throw "sliceLen doesn't match slice lengths: #{@sliceLen} !< #{@slices[0].length*@bitsPerInt}" if @slices[0].length*@bitsPerInt < @sliceLen
-
-  computeIndexes: (bit) -> [Math.floor(bit / @bitsPerInt), Math.ceil(bit % @bitsPerInt)]
 
   add: (k) ->
     @hashgenerator.reset(k)
     for i in [0..@numSlices-1]
-      parts = @computeIndexes(@hashgenerator.getIndex())
-      mask = 1 << parts[1]-1
       #console.log "setBit #{k} before? #{@has(k)}"
-      @slices[i][parts[0]] = @slices[i][parts[0]] | mask
+      @slices[i].set(@hashgenerator.getIndex())
       #console.log "setBit #{k} @slices[i][#{parts[0]}] #{parts[1]} = #{@slices[i][parts[0]]} | #{mask} == #{@slices[i][parts[0]]}"
       #console.log "setBit #{k} after? #{@has(k)}"
     @count++
@@ -56,22 +46,20 @@ class SlicedBloomFilter
   has: (k) ->
     @hashgenerator.reset(k)
     for i in [0..@numSlices-1]
-      parts = @computeIndexes(@hashgenerator.getIndex())
-      mask = 1 << parts[1]-1
-      return false if (@slices[i][parts[0]] & mask) == 0
+      return false if not @slices[i].has(@hashgenerator.getIndex())
       #console.log "bitSet? #{k} @slices[#{i}][#{parts[0]}] = #{@slices[i][parts[0]]} & #{mask} = #{(@slices[i][parts[0]] & mask) != 0} of #{@slices[i]}"
     return true
-
+# }}}
 ###
 # Strict filter: fail if you attempt to stuff more into it than its configured to handle.
 ###
-class StrictSlicedBloomFilter extends SlicedBloomFilter
+class StrictSlicedBloomFilter extends SlicedBloomFilter# {{{
   constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h') -> super(@capacity,@errorRate,@slices,@count,@hashStartChar)
   has: (k) -> super(k)
   add: (k) ->
     throw "count should be <= capacity, no more room: #{@count} <= #{@capacity}" if @count >= @capacity
     super(k)
-
+# }}}
 ###
 # A hash function. It is intended to be used to:
 #
@@ -81,7 +69,7 @@ class StrictSlicedBloomFilter extends SlicedBloomFilter
 # This class automatically handles the hash generation - minimizing the
 # total number of hashes generated.
 ###
-class HashGenerator
+class HashGenerator# {{{
   constructor: (@hashStartChar,@len) ->
     @hexCharsNeeded = Math.ceil(Math.log(@len) / Math.log(16))
 
@@ -113,14 +101,47 @@ class HashGenerator
     #console.log "#{@key}: #{@hash[@hashIdx-1]}-#{@hash.slice(@hashIdx, @hashIdx+@hexCharsNeeded)}: #{@hexCharsNeeded}-#{@len}-#{@hexCharsNeeded} - #{c} (#{@hexCharsNeeded})"
     @hashIdx += @hexCharsNeeded
     return c
+# }}}
+###
+# a function that generates a bit set. This one just returns an array based implementation.
+###
+class BitSetGenerator
+  constructor: (@bitsPerInt=32) ->
+  newSet: (size)-> new ArrayBitSet(size,@bitsPerInt)
+
+class ConciseBitSetGenerator extends BitSetGenerator
+  newSet: (size)-> new ConciseBitSet()
+
+###
+# straight up array based bit set (well, we use the bits of the ints in the array).
+###
+class ArrayBitSet
+  constructor: (@size,@bitsPerInt=32) ->
+    @data = []
+    cnt = 0
+    while cnt < @size
+      @data.push(0)
+      cnt += @bitsPerInt
+
+  computeIndexes: (bit) -> [Math.floor(bit / @bitsPerInt), Math.ceil(bit % @bitsPerInt)]
+  set: (bit) ->
+    parts = @computeIndexes(bit)
+    mask = 1 << parts[1]-1
+    @data[parts[0]] = (@data[parts[0]] | mask)
+  has: (bit) ->
+    parts = @computeIndexes(bit)
+    mask = 1 << parts[1]-1
+    return (@data[parts[0]] & mask) != 0
 
 ###
 # CONCISE bit set.
+# unfortunately you can't use the CONCISE bit for for a writeable bloom filter so
+# we are just using it for the read only version - for its space saving features.
 ###
-class ConciseBitSet
+class ConciseBitSet# {{{
   constructor: (@words=[],@top=0,@max=0) ->
 
-  append: (i) ->
+  add: (i) ->
     #console.log "append #{i}"
     # I think this must be true: i >= @max
     if @words.length == 0 # first append
@@ -288,7 +309,8 @@ class ConciseBitSet
         throw "Should start with 1, or 00 or 01 !?"
     return cnt
 
-  hasNumber: (n) ->
+  # Does this bitset contain number n?
+  has: (n) ->
     height = 0
     for w in @words
       if @isLiteral(w)
@@ -320,7 +342,7 @@ class ConciseBitSet
     else
       c = 32
     return c
-
+# }}}
 ###
 # A bloom filter that grows automatically.
 # Consists of several SlicedBloomFilter's to ensure that the
@@ -328,8 +350,8 @@ class ConciseBitSet
 #
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
-class ScalableBloomFilter
-  constructor: (@startcapacity=100,@targetErrorRate=.001,@filters=null,@stages=4,@r=0.85,@count=0)->
+class ScalableBloomFilter# {{{
+  constructor: (@startcapacity=100,@targetErrorRate=.001,@filters=null,@stages=4,@r=0.85,@count=0,@sliceGenerator=new BitSetGenerator())->
     # number of stages:
     # 4 is considered good for large growth (4+ orders of magnitude)
     # 2 is considered good for less growth (around 2 orders of magnitude)
@@ -337,7 +359,7 @@ class ScalableBloomFilter
     @count = 0
     @P_0 = @targetErrorRate*(1-@r)
     if not @filters
-      @filters = [new StrictSlicedBloomFilter(@startcapacity,@P_0,null,0,'h0')]
+      @filters = [new StrictSlicedBloomFilter(@startcapacity,@P_0,null,0,'h0',@sliceGenerator)]
 
   add: (k) ->
     @count = 0
@@ -353,7 +375,7 @@ class ScalableBloomFilter
     # filter will be larger by a factor of @stages, and its errorRatio will
     # also increase:
     #console.log "new cap & rate: #{@startcapacity*Math.pow(@stages,@filters.length)} and #{@P_0*Math.pow(@r,@filters.length)}"
-    @filters.push(new StrictSlicedBloomFilter(@startcapacity*Math.pow(@stages,@filters.length),@P_0*Math.pow(@r,@filters.length),null,0,"h#{@filters.length}"))
+    @filters.push(new StrictSlicedBloomFilter(@startcapacity*Math.pow(@stages,@filters.length),@P_0*Math.pow(@r,@filters.length),null,0,"h#{@filters.length}",@sliceGenerator))
     @filters[@filters.length-1].add(k)
     return this
 
@@ -361,9 +383,13 @@ class ScalableBloomFilter
     for f in @filters
       return true if f.has(k)
     return false
+# }}}
 
 module.exports =
   BloomFilter: SlicedBloomFilter
   StrictBloomFilter: StrictSlicedBloomFilter
   ScalableBloomFilter: ScalableBloomFilter
   ConciseBitSet: ConciseBitSet
+  ArrayBitSet: ArrayBitSet
+
+# vim: set fdm=marker:
