@@ -32,6 +32,38 @@ describe 'BloomFilter', ->
     cnt=0
     expect(bf.has("k#{cnt++}")).toBeTruthy() while cnt < 10
 
+  it 'can be made read only', ->
+    sz = 100
+    bf = new Filters.BloomFilter(sz)
+    bf.add("k#{cnt}") for cnt in [0..sz]
+    robf = bf.readOnlyInstance()
+    expect(bf.has("k#{cnt}")).toBeTruthy() for cnt in [0..sz]
+    expect(robf.has("k#{cnt}")).toBeTruthy() for cnt in [0..sz]
+
+    ###
+    console.log "BF:"
+    s.printObject() for s in bf.slices
+    console.log "ROBF:"
+    s.printObject() for s in robf.slices
+    ###
+
+    ###
+    numbers = 0
+    numbers += s.data.length for s in bf.slices
+    console.log "BF: #{numbers}"
+    numbers = 0
+    numbers += s.words.length for s in robf.slices
+    console.log "ROBF: #{numbers} "
+    ###
+
+    #console.log "len = #{bf.sliceLen}"
+    ###
+    for i in [0..bf.sliceLen-1]
+      for s,si in bf.slices
+        console.log "comparing sb to robf #{i} of #{si}: #{s.has(i)} =? #{robf.slices[si].has(i)}"
+        expect(s.has(i)).toEqual(robf.slices[si].has(i))
+    ###
+
 describe 'ArrayBitSet', ->
   abs = new Filters.ArrayBitSet(100)
   it 'can convert a bit offset to the number and bit of the number', ->
@@ -39,6 +71,28 @@ describe 'ArrayBitSet', ->
     expect(abs.computeIndexes(1)).toEqual([0,1])
     expect(abs.computeIndexes(32)).toEqual([1,0])
     expect(abs.computeIndexes(35)).toEqual([1,3])
+
+  it 'can convert to a CONCISE bitset', ->
+    abs = new Filters.ArrayBitSet(100)
+    cbs = abs.toConciseBitSet()
+    expect(cbs.has(i)).toBeFalsy() for i in [0..110]
+    abs.set(5)
+    cbs = abs.toConciseBitSet()
+    expect(abs.has(5)).toBeTruthy()
+    expect(cbs.has(5)).toBeTruthy()
+    expect(cbs.has(i)).toBeFalsy() for i in [0..4]
+    expect(cbs.has(i)).toBeFalsy() for i in [6..110]
+    abs = new Filters.ArrayBitSet(200)
+    abs.set(42)
+    abs.set(99)
+    abs.set(110)
+    cbs = abs.toConciseBitSet()
+    #cbs.printObject()
+    expect(abs.has(i)).toBeTruthy() for i in [42,99,110]
+    expect(cbs.has(i)).toBeTruthy() for i in [42,99,110]
+    expect(cbs.has(i)).toBeFalsy() for i in [0..41]
+    expect(cbs.has(i)).toBeFalsy() for i in [43..98]
+    expect(cbs.has(i)).toBeFalsy() for i in [100..109]
 
 describe 'ScalableBloomFilter', ->
   bf = new Filters.ScalableBloomFilter(10,0.00001)
@@ -151,3 +205,17 @@ describe 'ScalableBloomFilter', ->
     expect(cbs.trailingZeros(0)).toEqual(32)
     expect(cbs.trailingZeros(1)).toEqual(0)
     expect(cbs.trailingZeros(2)).toEqual(1)
+
+  it '42 and 110?', ->
+    cbs = new Filters.ConciseBitSet()
+    cbs.add(42)
+    expect(cbs.has(42)).toBeTruthy()
+    #cbs.printObject()
+    cbs.add(99)
+    expect(cbs.has(42)).toBeTruthy()
+    expect(cbs.has(99)).toBeTruthy()
+    cbs.add(110)
+    expect(cbs.has(42)).toBeTruthy()
+    expect(cbs.has(99)).toBeTruthy()
+    expect(cbs.has(110)).toBeTruthy()
+    #cbs.printObject()
