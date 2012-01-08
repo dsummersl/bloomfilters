@@ -242,22 +242,18 @@ ConciseBitSet = (function() {
       this.setWord(this.top, 0x80000000 | (1 << (i % 31)));
     } else {
       b = i - this.max + (this.max % 31);
-      console.log("b = " + b);
       if (b >= 31) {
+        f = Math.floor(b / 31.0) - 1;
         b = b % 31;
-        f = Math.floor(b / 31.0);
         if (f > 0) this.appendSequence(f, 0);
         this.appendLiteral(0x80000000 | (1 << b));
       } else {
         this.setWord(this.top, this.words[this.top] | (1 << b));
         if (this.wordMatches(this.words[this.top], 0xffffffff)) {
-          console.log("appending literal");
           this.top = this.top - 1;
           if (this.top < 0) this.words = [];
           if (this.top < 0) this.top = 0;
-          console.log("words = " + this.words.length + " " + this.top);
           this.appendLiteral(0xffffffff);
-          console.log("words = " + this.words.length + " " + this.top);
         }
       }
     }
@@ -267,17 +263,17 @@ ConciseBitSet = (function() {
   ConciseBitSet.prototype.appendLiteral = function(w) {
     if (this.words.length === 0) {
       this.top = 0;
-      return this.words.push(w);
+      return this.setWord(this.top, w);
     } else if (this.wordMatches(w, 0x80000000)) {
       if (this.words[this.top] === 0x80000000) {
         return this.setWord(this.top, 1);
       } else if ((this.words[this.top] & 0xc0000000) === 0) {
         return this.setWord(this.top, this.words[this.top] + 1);
       } else if (this.containsOneBit(0x7fffffff & this.words[this.top])) {
-        return this.setWord(this.top, 1 | ((1 + trailingZeros(this.words[this.top])) << 25));
+        return this.setWord(this.top, 1 | ((1 + this.trailingZeros(this.words[this.top])) << 25));
       } else {
         this.top++;
-        return this.words.push(w);
+        return this.setWord(this.top, w);
       }
     } else if (this.wordMatches(w, 0xffffffff)) {
       if (this.wordMatches(this.words[this.top], 0xffffffff)) {
@@ -285,7 +281,7 @@ ConciseBitSet = (function() {
       } else if (this.wordMatches(this.words[this.top] & 0xc0000000, 0x40000000)) {
         return this.setWord(this.top, this.words[this.top] + 1);
       } else if (this.containsOneBit(~this.words[this.top])) {
-        return this.setWord(this.top, 0x40000001 | ((1 + trailingZeros(this.words[this.top])) << 25));
+        return this.setWord(this.top, 0x40000001 | ((1 + this.trailingZeros(this.words[this.top])) << 25));
       } else {
         this.top++;
         return this.setWord(this.top, w);
@@ -298,22 +294,22 @@ ConciseBitSet = (function() {
 
   ConciseBitSet.prototype.appendSequence = function(l, t) {
     t = t & 0x40000001;
-    if (this.wordMatches(this.wordMatches(l, 1 ^ t), 0)) {
+    if (l === 1) {
       return this.appendLiteral(0x80000000);
-    } else if (this.wordMatches(this.wordMatches(l, 1 ^ t), 0x40000000)) {
+    } else if (l === 1 || this.wordMatches(t, 0x40000000)) {
       return this.appendLiteral(0xffffffff);
     } else if (this.words.length === 0) {
       this.top = 0;
       return this.setWord(this.top, t | (l - 1));
-    } else if ((this.words[this.top] & 0x80000000) !== 0) {
-      if (this.wordMatches(this.wordMatches(t, 0 ^ this.words[this.top]), 0x80000000)) {
+    } else if (this.isLiteral(this.words[this.top])) {
+      if (t === 0 && this.wordMatches(this.words[this.top], 0x80000000)) {
         return this.setWord(this.top, l);
-      } else if (this.wordMatches(this.wordMatches(t, 0x40000001 ^ this.words[this.top]), 0xffffffff)) {
+      } else if (this.wordMatches(t, 0x40000001) || this.wordMatches(this.words[this.top], 0xffffffff)) {
         return this.setWord(this.top, 0x40000000 | l);
-      } else if (this.wordMatches(t, 0 ^ this.containsOneBit(0x7fffffff & this.words[this.top]))) {
-        return this.setWord(this.top, l | ((1 + trailingZeros(this.words[this.top])) << 25));
-      } else if (this.wordMatches(t, 0x40000001 ^ this.containsOneBit(~this.words[this.top]))) {
-        return this.setWord(this.top, 0x40000000 | l | ((1 + trailingZeros(this.words[this.top])) << 25));
+      } else if (t === 0 && this.containsOneBit(0x7fffffff & this.words[this.top])) {
+        return this.setWord(this.top, l | ((1 + this.trailingZeros(this.words[this.top])) << 25));
+      } else if (this.wordMatches(t, 0x40000001) && this.containsOneBit(~this.words[this.top])) {
+        return this.setWord(this.top, 0x40000000 | l | ((1 + this.trailingZeros(this.words[this.top])) << 25));
       } else {
         this.top++;
         return this.setWord(this.top, t | (l - 1));
@@ -333,10 +329,8 @@ ConciseBitSet = (function() {
       throw "index i (" + i + ") should be no more than 1 more than @words length (currently " + this.words.length;
     }
     if (this.words.length < i - 1) {
-      this.words.push(w);
-      return console.log("Set new word[" + i + "] = " + (this.wordAsBitString(w)));
+      return this.words.push(w);
     } else {
-      console.log("Replace word[" + i + "]: " + (this.wordAsBitString(this.words[i])) + " -> " + (this.wordAsBitString(w)));
       return this.words[i] = w;
     }
   };
@@ -427,11 +421,9 @@ ConciseBitSet = (function() {
       if (this.isLiteral(w)) {
         cnt += this.bitsOfWordSet(w) - 1;
       } else if (this.is01Fill(w)) {
-        console.log('01 word');
         cnt += 31 + 31 * this.bitsOfWordSet(w & 0x7ffffff);
         cnt -= this.bitsOfWordSet((w >> 25) & 0x1f);
       } else if (this.is00Fill(w)) {
-        console.log('00 word');
         cnt += this.bitsOfWordSet((w >> 25) & 0x1f);
       } else {
         throw "Should start with 1, or 00 or 01 !?";
@@ -464,7 +456,25 @@ ConciseBitSet = (function() {
     return (w & (w - 1)) === 0;
   };
 
-  ConciseBitSet.prototype.trailingZeros = function(w) {};
+  ConciseBitSet.prototype.trailingZeros = function(v) {
+    var c, foundOne;
+    c = 0;
+    if (v !== 0) {
+      foundOne = false;
+      v = v ^ 0x80000000;
+      while (!foundOne) {
+        if ((v & 1) === 0) {
+          c++;
+        } else {
+          foundOne = true;
+        }
+        v >>= 1;
+      }
+    } else {
+      c = 32;
+    }
+    return c;
+  };
 
   return ConciseBitSet;
 
