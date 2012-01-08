@@ -58,3 +58,94 @@ describe 'ScalableBloomFilter', ->
   it 'has a copy constructor', ->
     bf2 = new Filters.ScalableBloomFilter(bf.startcapacity,bf.errorRate,bf.filters,bf.stages,bf.r,bf.count)
     expect(bf2.has("key #{i}")).toBeTruthy() for i in [1..11]
+ 
+ describe 'ConciseBitSet', ->
+  cbs = new Filters.ConciseBitSet()
+
+  it 'would start out empty', -> expect(cbs.top).toEqual(0)
+
+  it 'would contain a number if you added it - one word', ->
+    cbs = new Filters.ConciseBitSet()
+    cbs.append(1)
+    expect(cbs.max).toEqual(1)
+    expect(cbs.bitCount()).toEqual(1)
+    expect(cbs.hasNumber(1)).toBeTruthy()
+    cbs.append(10)
+    expect(cbs.max).toEqual(10)
+    expect(cbs.bitCount()).toEqual(2)
+    expect(cbs.hasNumber(i)).toBeFalsy() for i in [2..9]
+    expect(cbs.hasNumber(10)).toBeTruthy()
+
+  it 'would work for each type', ->
+    cbs = new Filters.ConciseBitSet()
+    cbs.append(i) for i in [0..30]
+    expect(cbs.max).toEqual(30)
+    expect(cbs.bitCount()).toEqual(31)
+    expect(cbs.hasNumber(i)).toBeTruthy() for i in [0..30]
+    expect(cbs.top).toEqual(0)
+    expect(cbs.max).toEqual(30)
+
+    cbs.append(31)
+    expect(cbs.bitCount()).toEqual(32)
+    expect(cbs.top).toEqual(1)
+    expect(cbs.max).toEqual(31)
+
+    cbs.append(32)
+    expect(cbs.bitCount()).toEqual(33)
+    expect(cbs.top).toEqual(1)
+    ###
+    cbs.printObject()
+    ###
+
+  it 'would work for the paper example.', ->
+    cbs = new Filters.ConciseBitSet()
+    cbs.append(3)
+    cbs.append(5)
+    expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 1000')).toEqual(cbs.words[0])
+    cbs.append(i) for i in [31..93]
+    expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 1000')).toEqual(cbs.words[0])
+    expect(cbs.bitStringAsWord('0100 0000 0000 0000 0000 0000 0000 0001')).toEqual(cbs.words[1])
+    expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0000 0001')).toEqual(cbs.words[2])
+    cbs.append(1024)
+    cbs.append(1028)
+    #cbs.printObject()
+    cbs.append(1040187422)
+    expect(cbs.max).toEqual(1040187422)
+    expect(cbs.top).toEqual(5)
+    expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0010 0010')).toEqual(cbs.words[3])
+    expect(cbs.bitStringAsWord('0000 0001 1111 1111 1111 1111 1101 1101')).toEqual(cbs.words[4])
+    expect(cbs.bitStringAsWord('1100 0000 0000 0000 0000 0000 0000 0000')).toEqual(cbs.words[5])
+    #cbs.printObject()
+
+  it 'has support functions that show the bits correctly', ->
+    cbs = new Filters.ConciseBitSet()
+    expect(cbs.bitOfWordSet(0,0)).toBeFalsy()
+    expect(cbs.bitsOfWordSet(0)).toEqual(0)
+    expect(cbs.bitOfWordSet(1,0)).toBeTruthy()
+    expect(cbs.bitsOfWordSet(1)).toEqual(1)
+    expect(cbs.wordAsBitString(1)).toEqual('0000 0000 0000 0000 0000 0000 0000 0001')
+    expect(cbs.bitStringAsWord('0000 0000 0000 0000 0000 0000 0000 0001')).toEqual(1)
+    expect(cbs.bitStringAsWord('0000 0000 0000 0000 0000 0000 0001 0001')).toEqual(17)
+    expect(cbs.bitStringAsWord('1000 0000 0000 0000 0000 0000 0000 0001')).toEqual(-2147483647)
+    expect(cbs.bitStringAsWord('0100 0000 0000 0000 0000 0000 0000 0001')).toEqual(1073741825)
+    expect(cbs.wordAsBitString(-2147483647)).toEqual('1000 0000 0000 0000 0000 0000 0000 0001')
+    expect(cbs.bitOfWordSet(-2147483647,31)).toBeTruthy()
+    expect(cbs.bitsOfWordSet(-2147483647)).toEqual(2)
+    expect(cbs.wordMatches(0,0x00000000)).toBeTruthy()
+    expect(cbs.wordMatches(0,0x00000001)).toBeFalsy()
+    expect(cbs.wordMatches(1,0x00000001)).toBeTruthy()
+    expect(cbs.wordMatches(0xffffffff,0xffffffff)).toBeTruthy()
+
+  it 'can do bitcount properly', ->
+    cbs = new Filters.ConciseBitSet()
+    expect(cbs.bitCount([])).toEqual(0)
+    expect(cbs.bitCount([1])).toEqual(0)
+    expect(cbs.bitCount([-2147483647])).toEqual(1)
+    expect(cbs.bitCount([1073741824])).toEqual(31)
+    expect(cbs.bitCount([1073741825])).toEqual(62)
+
+  it 'can do a propery trailing zeros', ->
+    cbs = new Filters.ConciseBitSet()
+    expect(cbs.trailingZeros(0)).toEqual(32)
+    expect(cbs.trailingZeros(1)).toEqual(0)
+    expect(cbs.trailingZeros(2)).toEqual(1)

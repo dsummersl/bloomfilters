@@ -115,6 +115,213 @@ class HashGenerator
     return c
 
 ###
+# CONCISE bit set.
+###
+class ConciseBitSet
+  constructor: (@words=[],@top=0,@max=0) ->
+
+  append: (i) ->
+    #console.log "append #{i}"
+    # I think this must be true: i >= @max
+    if @words.length == 0 # first append
+      f = Math.floor(i/31.0)
+      switch f
+        when 0
+          @top = 0
+        when 1
+          @top = 1
+          @setWord(0,0x80000000)
+        else # fill
+          @top = 1
+          @setWord(0,f-1)
+      @setWord(@top,(0x80000000 | (1 << (i % 31))))
+    else
+      b = i - @max + (@max % 31)
+      #console.log "b = #{b}"
+      if b >= 31
+        f = Math.floor(b/31.0) - 1
+        b = b % 31 # zeroes are required before we can insert this bit
+        #console.log "f = #{f}, b = #{b}"
+        @appendSequence(f,0) if f > 0
+        #console.log "and literal low end"
+        @appendLiteral(0x80000000 | (1 << b))
+      else
+        @setWord(@top,@words[@top] | (1 << b))
+        if @wordMatches(@words[@top],0xffffffff)
+          #console.log "appending literal"
+          @top = @top - 1
+          @words = [] if @top < 0
+          @top = 0 if @top < 0
+          #console.log "words = #{@words.length} #{@top}"
+          @appendLiteral(0xffffffff)
+          #console.log "words = #{@words.length} #{@top}"
+    @max = i
+
+  appendLiteral: (w) ->
+    if @words.length == 0 # first append
+      @top = 0
+      @setWord(@top,w)
+    else if @wordMatches(w,0x80000000) # all 0's literal
+      if @words[@top] == 0x80000000
+        #console.log "0x8"
+        @setWord(@top,1 ) # sequence of 2 blocks of 0's
+      else if (@words[@top] & 0xc0000000) == 0
+        #console.log "0xc"
+        @setWord(@top,@words[@top] + 1 ) # one more block
+      else if @containsOneBit(0x7fffffff & @words[@top])
+        #console.log "hasabit"
+        # convert the last one-set-bit literal in a mixed word of 2 blocks of 0's
+        @setWord(@top,1 | ((1+@trailingZeros(@words[@top])) << 25))
+      else # nothing to merge
+        #console.log "nomerge"
+        @top++
+        @setWord(@top,w)
+    else if @wordMatches(w,0xffffffff) # all 1's literal
+      if @wordMatches(@words[@top],0xffffffff)
+        @setWord(@top,0x40000001 ) # sequence of 2 blocks of 1's
+      else if @wordMatches((@words[@top] & 0xc0000000),0x40000000)
+        @setWord(@top,@words[@top] + 1 ) # one more block
+      else if @containsOneBit(~@words[@top])
+        # convert the last one-unset-bit literal in a mixed word of 2 blocks of 1's
+        @setWord(@top,0x40000001 | ((1+@trailingZeros(@words[@top])) << 25))
+      else # nothing to merge
+        @top++
+        @setWord(@top,w)
+    else # nothing to merge
+      @top++
+      @setWord(@top,w)
+
+  appendSequence: (l,t) ->
+    t = t & 0x40000001 # retain only the fill type
+    #if @wordMatches(@wordMatches(l,(1 ^ t)),0)
+    if l == 1
+      @appendLiteral(0x80000000)
+    else if l == 1 || @wordMatches(t,0x40000000)
+      @appendLiteral(0xffffffff)
+    else if @words.length == 0
+      @top = 0
+      @setWord(@top,t | (l-1))
+    else if @isLiteral(@words[@top]) # the last word is a literal
+      if t == 0 && @wordMatches(@words[@top],0x80000000)
+        @setWord(@top,l ) # make a sequence of l + 1 blocks of 0's
+      else if @wordMatches(t,0x40000001) || @wordMatches(@words[@top],0xffffffff)
+        @setWord(@top,0x40000000 | l ) # make a sequence of l+1 blocks of 1's
+      else if t==0 && @containsOneBit(0x7fffffff & @words[@top])
+        @setWord(@top,l | ((1 + @trailingZeros(@words[@top])) << 25))
+      else if @wordMatches(t,0x40000001) && @containsOneBit(~@words[@top])
+        @setWord(@top,0x40000000 | l | ((1 + @trailingZeros(@words[@top])) << 25))
+      else # nothing to merge
+        @top++
+        @setWord(@top,t | (l-1))
+    else
+      if @wordMatches((@words[@top] & 0xc0000000),t)
+        @setWord(@top,@words[@top] + l ) # increase the sequence
+      else
+        @top++
+        @setWord(@top,t | (l-1))
+
+  # Set the word at index i (check bounds and such)
+  setWord: (i,w) ->
+    throw "index i (#{i}) should be no more than 1 more than @words length (currently #{@words.length}" if i > @words.length
+    if @words.length < i-1
+      @words.push(w)
+      #console.log "Set new word[#{i}] = #{@wordAsBitString(w)}"
+    else
+      #console.log "Replace word[#{i}]: #{@wordAsBitString(@words[i])} -> #{@wordAsBitString(w)}"
+      @words[i] = w
+
+  printObject: ->
+    console.log "top = #{@top}"
+    console.log "max = #{@max}"
+    for w,i in @words
+      console.log "word #{i} : #{@wordAsBitString(w)}" if (i <= @top)
+
+  bitStringAsWord: (str) ->
+    b = 0
+    offset = 31
+    for bit in str
+      if bit != ' '
+        b = b | (parseInt(bit) << offset--)
+    return b
+
+  wordAsBitString: (w) ->
+    str = ""
+    for i in [31..0]
+      str += " " if (i+1) % 4 == 0 and i != 31
+      if @bitOfWordSet(w,i)
+        str += "1"
+      else
+        str += "0"
+    return str
+
+  # for a word, count the number of bits that are set to one.
+  bitOfWordSet: (w,i) -> (w & (1 << i)) != 0
+  bitsOfWordSet: (w) ->
+    cnt = 0
+    cnt++ for i in [0..31] when @bitOfWordSet(w,i)
+    return cnt
+  wordMatches: (w,p) ->
+    allMatch = true
+    for i in [0..31]
+      allMatch = @bitOfWordSet(w,i) == @bitOfWordSet(p,i)
+      return false if not allMatch
+    return true
+
+  isLiteral: (w) -> (w & 0x80000000) != 0 #1 literal word
+  is01Fill: (w) -> (w & 0x80000000) == 0 && (w & 0x40000000) != 0 #01 fill word
+  is00Fill: (w) -> (w & 0x80000000) == 0 && (w & 0x40000000) == 0 #00 fill word
+
+  bitCount: (arr=@words) ->
+    cnt = 0
+    for w in arr
+      if @isLiteral(w)
+        #console.log "literal word: #{@wordAsBitString(w)} - count #{@bitsOfWordSet(w)-1}"
+        cnt += @bitsOfWordSet(w) - 1
+      else if @is01Fill(w)
+        #console.log '01 word'
+        cnt += 31 + 31*@bitsOfWordSet(w & 0x7ffffff)
+        cnt -= @bitsOfWordSet((w >> 25) & 0x1f)
+      else if @is00Fill(w)
+        #console.log '00 word'
+        cnt += @bitsOfWordSet((w >> 25) & 0x1f)
+      else
+        throw "Should start with 1, or 00 or 01 !?"
+    return cnt
+
+  hasNumber: (n) ->
+    height = 0
+    for w in @words
+      if @isLiteral(w)
+        #console.log "literal bit set? #{@wordAsBitString(w)} for #{n-height} is #{@bitOfWordSet(w,n-height)}"
+        if n - height <= 31
+          return @bitOfWordSet(w,n-height)
+        height += 31
+      else if @is01Fill(w)
+        return true if n - height <= 31 + 31*(w & 0x7ffffff)
+        height += 31 + 31*(w & 0x7ffffff)
+      else if @is00Fill(w)
+        return false if n - height <= 31 + 31*(w & 0x7ffffff)
+        height += 31 + 31*(w & 0x7ffffff)
+      return false if n < height
+
+  containsOneBit: (w) -> (w & (w-1)) == 0
+
+  trailingZeros: (v) ->
+    c = 0
+    if v != 0
+      foundOne = false
+      v = v ^ 0x80000000 # set highest bit to 1, and then just walk down till we find a one.
+      while not foundOne
+        if (v & 1) == 0
+          c++
+        else
+          foundOne = true
+        v >>= 1
+    else
+      c = 32
+    return c
+
+###
 # A bloom filter that grows automatically.
 # Consists of several SlicedBloomFilter's to ensure that the
 # filter maintains its % error.
@@ -159,3 +366,4 @@ module.exports =
   BloomFilter: SlicedBloomFilter
   StrictBloomFilter: StrictSlicedBloomFilter
   ScalableBloomFilter: ScalableBloomFilter
+  ConciseBitSet: ConciseBitSet
