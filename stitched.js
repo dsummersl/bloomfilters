@@ -65,6 +65,25 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1;
 
 SlicedBloomFilter = (function() {
 
+  SlicedBloomFilter.fromJSON = function(json) {
+    var s, slices, _i, _j, _len, _len2, _ref, _ref2;
+    slices = [];
+    if (json.slicesType === 'ArrayBitSet') {
+      _ref = json.slices;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        s = _ref[_i];
+        slices.push(ArrayBitSet.fromJSON(s));
+      }
+    } else {
+      _ref2 = json.slices;
+      for (_j = 0, _len2 = _ref2.length; _j < _len2; _j++) {
+        s = _ref2[_j];
+        slices.push(ConciseBitSet.fromJSON(s));
+      }
+    }
+    return new SlicedBloomFilter(json.capacity, json.errorRate, slices, json.count, json.hashStartChar);
+  };
+
   function SlicedBloomFilter(capacity, errorRate, slices, count, hashStartChar) {
     var cnt, i, _ref;
     this.capacity = capacity != null ? capacity : 100;
@@ -82,9 +101,14 @@ SlicedBloomFilter = (function() {
     this.sliceLen = Math.ceil(this.totalSize / this.numSlices);
     this.hashgenerator = new HashGenerator(this.hashStartChar, this.sliceLen);
     if (!this.slices) {
+      this.slicesType = 'ArrayBitSet';
       this.slices = [];
       for (i = 0, _ref = this.numSlices - 1; 0 <= _ref ? i <= _ref : i >= _ref; 0 <= _ref ? i++ : i--) {
         this.slices.push(new ArrayBitSet(this.sliceLen, this.bitsPerInt));
+      }
+    } else {
+      if (!(this.slices[0] instanceof ArrayBitSet)) {
+        this.slicesType = 'ConciseBitSet';
       }
     }
     if (this.slices.length !== this.numSlices) {
@@ -116,14 +140,15 @@ SlicedBloomFilter = (function() {
   };
 
   SlicedBloomFilter.prototype.readOnlyInstance = function() {
-    var ROslices, s, _i, _len, _ref;
+    var ROslices, s, sbf, _i, _len, _ref;
     ROslices = [];
     _ref = this.slices;
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       s = _ref[_i];
       ROslices.push(s.toConciseBitSet());
     }
-    return new SlicedBloomFilter(this.capacity, this.errorRate, ROslices, this.count, this.hashStartChar);
+    sbf = new SlicedBloomFilter(this.capacity, this.errorRate, ROslices, this.count, this.hashStartChar);
+    return sbf;
   };
 
   return SlicedBloomFilter;
@@ -138,6 +163,12 @@ StrictSlicedBloomFilter = (function() {
 
   __extends(StrictSlicedBloomFilter, SlicedBloomFilter);
 
+  StrictSlicedBloomFilter.fromJSON = function(json) {
+    var sbl;
+    sbl = SlicedBloomFilter.fromJSON(json);
+    return new StrictSlicedBloomFilter(sbl.capacity, sbl.errorRate, sbl.slices, sbl.count, sbl.hashStartChar);
+  };
+
   function StrictSlicedBloomFilter(capacity, errorRate, slices, count, hashStartChar) {
     this.capacity = capacity != null ? capacity : 100;
     this.errorRate = errorRate != null ? errorRate : .001;
@@ -146,10 +177,6 @@ StrictSlicedBloomFilter = (function() {
     this.hashStartChar = hashStartChar != null ? hashStartChar : 'h';
     StrictSlicedBloomFilter.__super__.constructor.call(this, this.capacity, this.errorRate, this.slices, this.count, this.hashStartChar);
   }
-
-  StrictSlicedBloomFilter.prototype.has = function(k) {
-    return StrictSlicedBloomFilter.__super__.has.call(this, k);
-  };
 
   StrictSlicedBloomFilter.prototype.add = function(k) {
     if (this.count >= this.capacity) {
@@ -281,11 +308,15 @@ ArrayBitSet = (function() {
 
   __extends(ArrayBitSet, BitSet);
 
-  function ArrayBitSet(size, bitsPerInt) {
+  ArrayBitSet.fromJSON = function(json) {
+    return new ArrayBitSet(json.size, json.bitsPerInt, json.data);
+  };
+
+  function ArrayBitSet(size, bitsPerInt, data) {
     var cnt;
     this.size = size;
     this.bitsPerInt = bitsPerInt != null ? bitsPerInt : 32;
-    this.data = [];
+    this.data = data != null ? data : [];
     cnt = 0;
     while (cnt < this.size) {
       this.data.push(0);
@@ -355,6 +386,10 @@ ArrayBitSet = (function() {
 ConciseBitSet = (function() {
 
   __extends(ConciseBitSet, BitSet);
+
+  ConciseBitSet.fromJSON = function(json) {
+    return new ConciseBitSet(json.words, json.top, json.max, json.count);
+  };
 
   function ConciseBitSet(words, top, max, count) {
     this.words = words != null ? words : [];
@@ -598,6 +633,17 @@ ConciseBitSet = (function() {
 
 ScalableBloomFilter = (function() {
 
+  ScalableBloomFilter.fromJSON = function(json) {
+    var f, filters, _i, _len, _ref;
+    filters = [];
+    _ref = json.filters;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      f = _ref[_i];
+      filters.push(StrictSlicedBloomFilter.fromJSON(f));
+    }
+    return new ScalableBloomFilter(json.startcapacity, json.targetErrorRate, filters, json.stages, json.r, json.count);
+  };
+
   function ScalableBloomFilter(startcapacity, targetErrorRate, filters, stages, r, count) {
     this.startcapacity = startcapacity != null ? startcapacity : 100;
     this.targetErrorRate = targetErrorRate != null ? targetErrorRate : .001;
@@ -605,7 +651,6 @@ ScalableBloomFilter = (function() {
     this.stages = stages != null ? stages : 4;
     this.r = r != null ? r : 0.85;
     this.count = count != null ? count : 0;
-    this.count = 0;
     this.P_0 = this.targetErrorRate * (1 - this.r);
     if (!this.filters) {
       this.filters = [new StrictSlicedBloomFilter(this.startcapacity, this.P_0, null, 0, 'h0')];
