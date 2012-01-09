@@ -10,6 +10,14 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class SlicedBloomFilter# {{{
+  @fromJSON: (json) ->
+    slices = []
+    if json.slicesType == 'ArrayBitSet'
+      slices.push(ArrayBitSet.fromJSON(s)) for s in json.slices
+    else
+      slices.push(ConciseBitSet.fromJSON(s)) for s in json.slices
+    return new SlicedBloomFilter(json.capacity,json.errorRate,slices,json.count,json.hashStartChar)
+
   constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h')->
     @bitsPerInt = 32
     # P = p^k = @errorRate
@@ -28,8 +36,12 @@ class SlicedBloomFilter# {{{
     @sliceLen = Math.ceil(@totalSize / @numSlices)
     @hashgenerator = new HashGenerator(@hashStartChar,@sliceLen)
     if not @slices
+      @slicesType = 'ArrayBitSet'
       @slices = []
       @slices.push(new ArrayBitSet(@sliceLen,@bitsPerInt)) for i in [0..@numSlices-1]
+    else
+      if @slices[0] not instanceof ArrayBitSet
+        @slicesType = 'ConciseBitSet'
     throw "numSlices doesn't match slices: #{@slices.length} != #{@numSlices}" if @slices.length != @numSlices
     throw "sliceLen doesn't match slice lengths: #{@sliceLen} !< #{@slices[0].length*@bitsPerInt}" if @slices[0].length*@bitsPerInt < @sliceLen
 
@@ -54,14 +66,18 @@ class SlicedBloomFilter# {{{
   readOnlyInstance: ->
     ROslices = []
     ROslices.push(s.toConciseBitSet()) for s in @slices
-    return new SlicedBloomFilter(@capacity,@errorRate,ROslices,@count,@hashStartChar)
+    sbf = new SlicedBloomFilter(@capacity,@errorRate,ROslices,@count,@hashStartChar)
+    return sbf
 # }}}
 ###
 # Strict filter: fail if you attempt to stuff more into it than its configured to handle.
 ###
 class StrictSlicedBloomFilter extends SlicedBloomFilter# {{{
+  @fromJSON: (json) ->
+    sbl = SlicedBloomFilter.fromJSON(json)
+    return new StrictSlicedBloomFilter(sbl.capacity,sbl.errorRate,sbl.slices,sbl.count,sbl.hashStartChar)
+
   constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h') -> super(@capacity,@errorRate,@slices,@count,@hashStartChar)
-  has: (k) -> super(k)
   add: (k) ->
     throw "count should be <= capacity, no more room: #{@count} <= #{@capacity}" if @count >= @capacity
     super(k)
@@ -150,9 +166,9 @@ class BitSet# {{{
 # Straight up array based bit set (well, we use the bits of the ints in the array).
 ###
 class ArrayBitSet extends BitSet # {{{
+  @fromJSON: (json) -> return new ArrayBitSet(json.size,json.bitsPerInt,json.data)
   # size is the number of words of with bitsPerInt in each word...
-  constructor: (@size,@bitsPerInt=32) ->
-    @data = []
+  constructor: (@size,@bitsPerInt=32,@data=[]) ->
     cnt = 0
     while cnt < @size
       @data.push(0)
@@ -192,6 +208,8 @@ class ArrayBitSet extends BitSet # {{{
 # we are just using it for the read only version - for its space saving features.
 ###
 class ConciseBitSet extends BitSet # {{{
+  @fromJSON: (json) -> return new ConciseBitSet(json.words,json.top,json.max,json.count)
+
   constructor: (@words=[],@top=0,@max=0,@count=0) ->
 
   add: (i) ->
@@ -384,12 +402,16 @@ class ConciseBitSet extends BitSet # {{{
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class ScalableBloomFilter# {{{
+  @fromJSON: (json) ->
+    filters = []
+    filters.push(StrictSlicedBloomFilter.fromJSON(f)) for f in json.filters
+    return new ScalableBloomFilter(json.startcapacity,json.targetErrorRate,filters,json.stages,json.r,json.count)
+
   constructor: (@startcapacity=100,@targetErrorRate=.001,@filters=null,@stages=4,@r=0.85,@count=0)->
     # number of stages:
     # 4 is considered good for large growth (4+ orders of magnitude)
     # 2 is considered good for less growth (around 2 orders of magnitude)
     # k_i = k_0 + i*log2(r^-1)
-    @count = 0
     @P_0 = @targetErrorRate*(1-@r)
     if not @filters
       @filters = [new StrictSlicedBloomFilter(@startcapacity,@P_0,null,0,'h0')]

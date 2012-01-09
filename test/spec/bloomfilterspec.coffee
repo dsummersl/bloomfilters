@@ -31,6 +31,15 @@ describe 'BloomFilter', ->
     bf2 = new Filters.BloomFilter(bf.capacity,bf.errorRate,bf.filter,bf.count)
     cnt=0
     expect(bf.has("k#{cnt++}")).toBeTruthy() while cnt < 10
+    bf3 = Filters.BloomFilter.fromJSON(JSON.parse(JSON.stringify(bf2)))
+    expect(bf3.slices[0] instanceof Filters.ArrayBitSet).toBeTruthy()
+    expect(bf3.has("k#{cnt++}")).toBeTruthy() while cnt < 10
+    robf = bf.readOnlyInstance()
+    expect(robf.has("k#{cnt++}")).toBeTruthy() while cnt < 10
+    expect(robf.slices[0] instanceof Filters.ConciseBitSet).toBeTruthy()
+    robf2 = Filters.BloomFilter.fromJSON(JSON.parse(JSON.stringify(robf)))
+    expect(robf2.has("k#{cnt++}")).toBeTruthy() while cnt < 10
+    expect(robf2.slices[0] instanceof Filters.ConciseBitSet).toBeTruthy()
 
   it 'can be made read only', ->
     sz = 100
@@ -112,10 +121,20 @@ describe 'ScalableBloomFilter', ->
     expect(bf.filters[0].capacity < bf.filters[1].capacity).toBeTruthy()
 
   it 'has a copy constructor', ->
-    bf2 = new Filters.ScalableBloomFilter(bf.startcapacity,bf.errorRate,bf.filters,bf.stages,bf.r,bf.count)
+    bf2 = new Filters.ScalableBloomFilter(bf.startcapacity,bf.targetErrorRate,bf.filters,bf.stages,bf.r,bf.count)
+    expect(bf.count).toEqual(11)
+    expect(bf2.count).toEqual(11)
     expect(bf2.has("key #{i}")).toBeTruthy() for i in [1..11]
     robf = bf2.readOnlyInstance()
     expect(robf.has("key #{i}")).toBeTruthy() for i in [1..11]
+    bf2 = Filters.ScalableBloomFilter.fromJSON(JSON.parse(JSON.stringify(bf)))
+    expect(bf2.filters[0] instanceof Filters.StrictBloomFilter).toBeTruthy()
+    expect(bf2.filters[0].slices[0] instanceof Filters.ArrayBitSet).toBeTruthy()
+    expect(bf2.has("key #{i}")).toBeTruthy() for i in [1..11]
+    robf2 = Filters.ScalableBloomFilter.fromJSON(JSON.parse(JSON.stringify(robf)))
+    expect(robf2.filters[0] instanceof Filters.StrictBloomFilter).toBeTruthy()
+    expect(robf2.filters[0].slices[0] instanceof Filters.ConciseBitSet).toBeTruthy()
+    expect(robf2.has("key #{i}")).toBeTruthy() for i in [1..11]
  
  describe 'ConciseBitSet', ->
   cbs = new Filters.ConciseBitSet()
