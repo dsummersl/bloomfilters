@@ -176,7 +176,7 @@ class ArrayBitSet extends BitSet # {{{
 
   computeIndexes: (bit) -> [Math.floor(bit / @bitsPerInt), Math.ceil(bit % @bitsPerInt)]
   set: (bit) ->
-    throw "Array is setup for #{@size*@bitsPerInt} bits, but bit #{@bit} was attempted." if bit >= @size*@bitsPerInt
+    throw "Array is setup for #{@size*@bitsPerInt} bits, but bit #{bit} was attempted." if bit >= @size*@bitsPerInt
     parts = @computeIndexes(bit)
     mask = 1 << parts[1]-1
     @data[parts[0]] = (@data[parts[0]] | mask)
@@ -206,6 +206,12 @@ class ArrayBitSet extends BitSet # {{{
 # CONCISE bit set.
 # unfortunately you can't use the CONCISE bit for for a writeable bloom filter so
 # we are just using it for the read only version - for its space saving features.
+#
+# This bitmap is really only useful if the bloom filter is mostly full, or mostly empty. In that
+# middle state, there aren't sparse areas of 1s or 0s for it to compress.
+#
+# If the # of items in the bloom filter is near the capacity of the filter, the standard array
+# is almost always better (uses less space)
 ###
 class ConciseBitSet extends BitSet # {{{
   @fromJSON: (json) -> return new ConciseBitSet(json.words,json.top,json.max,json.count)
