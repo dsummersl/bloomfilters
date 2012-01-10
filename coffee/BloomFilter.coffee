@@ -49,7 +49,7 @@ class SlicedBloomFilter# {{{
     @hashgenerator.reset(k)
     for i in [0..@numSlices-1]
       #console.log "setBit #{k} before? #{@has(k)}"
-      @slices[i].set(@hashgenerator.getIndex())
+      @slices[i].add(@hashgenerator.getIndex())
       #console.log "setBit #{k} @slices[i][#{parts[0]}] #{parts[1]} = #{@slices[i][parts[0]]} | #{mask} == #{@slices[i][parts[0]]}"
       #console.log "setBit #{k} after? #{@has(k)}"
     @count++
@@ -129,6 +129,7 @@ class HashGenerator# {{{
 # abstract bit set class. common handy methods.
 ###
 class BitSet# {{{
+  add: (b) ->
   has: (b) -> false
 
   bitStringAsWord: (str) ->
@@ -166,20 +167,21 @@ class BitSet# {{{
 # Straight up array based bit set (well, we use the bits of the ints in the array).
 ###
 class ArrayBitSet extends BitSet # {{{
-  @fromJSON: (json) -> return new ArrayBitSet(json.size,json.bitsPerInt,json.data)
+  @fromJSON: (json) -> return new ArrayBitSet(json.size,json.bitsPerInt,json.data,json.max)
   # size is the number of words of with bitsPerInt in each word...
-  constructor: (@size,@bitsPerInt=32,@data=[]) ->
+  constructor: (@size,@bitsPerInt=32,@data=[],@max) ->
     cnt = 0
     while cnt < @size
       @data.push(0)
       cnt += @bitsPerInt
 
   computeIndexes: (bit) -> [Math.floor(bit / @bitsPerInt), Math.ceil(bit % @bitsPerInt)]
-  set: (bit) ->
+  add: (bit) ->
     throw "Array is setup for #{@size*@bitsPerInt} bits, but bit #{bit} was attempted." if bit >= @size*@bitsPerInt
     parts = @computeIndexes(bit)
     mask = 1 << parts[1]-1
     @data[parts[0]] = (@data[parts[0]] | mask)
+    @max = bit if bit > @max
   has: (bit) ->
     return false if bit >= @size*@bitsPerInt
     parts = @computeIndexes(bit)

@@ -4,7 +4,8 @@
   "description": "A set of bloom filter implementations for coffee/javascipt.",
   "keywords": [
     "hash",
-    "bloom"
+    "bloom",
+    "bitmap"
   ],
   "homepage": "https://github.com/dsummersl/bloomfilters",
   "bugs": {
@@ -19,8 +20,8 @@
     "type": "git",
     "url": "https://github.com/dsummersl/bloomfilters.git"
   },
-  "main" : "./js/BloomFilter.js",
-  "version": "0.0.10",
+  "main" : "./index.js",
+  "version": "0.0.11",
   "dependencies": { 
     "jasmine-node": "~1.0.12",
     "coffee-script": "~1.1.3",

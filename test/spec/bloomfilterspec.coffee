@@ -85,16 +85,16 @@ describe 'ArrayBitSet', ->
     abs = new Filters.ArrayBitSet(100)
     cbs = abs.toConciseBitSet()
     expect(cbs.has(i)).toBeFalsy() for i in [0..110]
-    abs.set(5)
+    abs.add(5)
     cbs = abs.toConciseBitSet()
     expect(abs.has(5)).toBeTruthy()
     expect(cbs.has(5)).toBeTruthy()
     expect(cbs.has(i)).toBeFalsy() for i in [0..4]
     expect(cbs.has(i)).toBeFalsy() for i in [6..110]
     abs = new Filters.ArrayBitSet(200)
-    abs.set(42)
-    abs.set(99)
-    abs.set(110)
+    abs.add(42)
+    abs.add(99)
+    abs.add(110)
     cbs = abs.toConciseBitSet()
     #cbs.printObject()
     expect(abs.has(i)).toBeTruthy() for i in [42,99,110]
