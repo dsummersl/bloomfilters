@@ -13,7 +13,7 @@ Currently three bloom filters are supported:
 * sliced bloom filter: a bloom filter that is optimized to minimize false positives.
 * strict sliced bloom filter: same as above but forbids you from adding more keys than the filter supports.
 * scalable bloom filter: a bloom filter than automatically alocates additional space. It grows, while preserving your target error rate.
-* CONCISE bit map: an implementation of the CONCISE bitmap [http://ricerca.mat.uniroma3.it/users/colanton/concise.html].
+* CONCISE bit map: an implementation of the [CONCISE bitmap](http://ricerca.mat.uniroma3.it/users/colanton/concise.html).
 
 Artifacts
 ----
