@@ -1,3 +1,4 @@
+[![build status](https://secure.travis-ci.org/dsummersl/bloomfilters.png)](http://travis-ci.org/dsummersl/bloomfilters)
 BloomFilters
 ----
 
