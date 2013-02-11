@@ -20,9 +20,6 @@
     "type": "git",
     "url": "https://github.com/dsummersl/bloomfilters.git"
   },
-  "scripts" : {
-    "test" : "cake test",
-  },
   "main" : "./index.js",
   "version": "0.0.11",
   "dependencies": { 
