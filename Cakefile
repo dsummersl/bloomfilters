@@ -18,8 +18,8 @@ cp -r #{__dirname}/node_modules/crypto #{__dirname}/vendor
     console.log stderr
     console.log error if error != null
     stitch = require 'stitch'
-    package = stitch.createPackage({ paths: [__dirname+'/js',__dirname+'/vendor'] })
-    package.compile( (err,src)->
+    pack = stitch.createPackage({ paths: [__dirname+'/js',__dirname+'/vendor'] })
+    pack.compile( (err,src)->
       fs.writeFile('stitched.js',src,(err)->
         throw err if err
         console.log('Compiled stitched.js')
