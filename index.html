@@ -35,20 +35,29 @@
       $(function() {
         // setup the UI for each section, and their filter
         $.each(sections, function(i,v) {
-          $('#filters').append($('#filterUItemplate ').html());
+          $('#filters').append($('#filterUItemplate').html());
           $('#filters .filterUI').attr('id',v.id);
           $('#'+ v.id).addClass('floatBreak');
           $('#'+ v.id).removeClass('filterUI');
           $('#'+ v.id +' .filterDesc').text(v.name +": ");
         });
+        // for each button, create 'add 100 keys' functionality:
         $('#filters button').click(function () {
+          // get the id of the particular div.
           var myid = $(this).parent().attr('id');
           $.each(sections, function(i,v) {
-            if (v.id == myid) {
+            if (v.id === myid) {
+              // If this section matches the id that the user clicked on, add
+              // keys and check if there are any false positives in the bloom
+              // fiter.
               var start = v.filter.count;
               for (var i=start;i<start+100;i++) {
                 v.filter.add("key-"+i);
               }
+              // Check for false positives: note that as the size of the bloom
+              // filters grows the time it takes to check all the filters grows
+              // O(n) operation. Note that adding a key (and not checking) is an
+              // O(1) operation!
               var falsePositive = 0;
               for (var i=0;i<v.filter.count;i++) {
                 if (v.filter.has("nokey-"+ i)) {
@@ -56,6 +65,7 @@
                   console.log("["+ v.name +"] False Positive: nokey-"+ i);
                 }
               }
+              // show the count and false positive rate:
               $('#'+ v.id +' .filterCount').text(" Count: "+ v.filter.count +" False Positives: "+ falsePositive);
             }
           });
@@ -65,15 +75,20 @@
   </head>
   <body>
     <p>
-    Here is an example of the three types of bloom filter. Click the button to
-    add keys to the bloom filter. Each filter is set to an initial capacity of
-    of 100 keys - so as you add more keys the more limited bloom filters would
-    expect to start obtaining some false positives, while the scalable one should
-    maintain a very low error rate.
+    Here is an example of the three types of bloom filter. Click the buttons to
+    add 100 keys to a particular bloom filter.
+    </p>
+
+    <p>
+    Each filter is set to an initial capacity of of 100 keys. As you add more
+    keys the simpler bloom filters one would expect to start seeing some false
+    positives, while the scalable bloom filter should maintain a very low error
+    rate.
     </p>
     <hr/>
 
     <div id="filters"></div>
+    <hr/>
 
     <div id="filterUItemplate" style="visibility: hidden;">
       <div class="filterUI">
@@ -81,6 +96,7 @@
         <button class="button floater">Add 100 Keys</button>
         <div class="filterCount floater"></div>
       </div>
+      <br/>
     </div>
   </body>
 </html>

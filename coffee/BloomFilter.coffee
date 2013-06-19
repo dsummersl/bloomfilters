@@ -10,6 +10,12 @@ SHA1 = require('crypto/sha1').hex_hmac_sha1
 # http://en.wikipedia.org/wiki/Bloom_filter#CITEREFAlmeidaBaqueroPreguicaHutchison2007
 ###
 class SlicedBloomFilter# {{{
+  # The number of keys in the filter.
+  @count = 0
+
+  # The number of slices within the filter. Type: an array of BitSet objects.
+  @slices = null
+
   @fromJSON: (json) ->
     slices = []
     if json.slicesType == 'ArrayBitSet'
@@ -18,6 +24,17 @@ class SlicedBloomFilter# {{{
       slices.push(ConciseBitSet.fromJSON(s)) for s in json.slices
     return new SlicedBloomFilter(json.capacity,json.errorRate,slices,json.count,json.hashStartChar)
 
+  # Create a new filter.
+  #
+  # Parameters:
+  #   @capacity      = The size that the filter is expected to be.
+  #   @errorRate     = The desired error rate of the filter.
+  #   @slices        = Underlying slices used by the bloom filter (for
+  #                    deserialization)
+  #   @count         = The total number of keys in the filter (for
+  #                    deserialization)
+  #   @hashStartChar = The salt that is fed to the HashGenerator used by this
+  #                    filter.
   constructor: (@capacity=100,@errorRate=.001,@slices=null,@count=0,@hashStartChar='h')->
     @bitsPerInt = 32
     # P = p^k = @errorRate
@@ -63,6 +80,8 @@ class SlicedBloomFilter# {{{
       return false if not @slices[i].has(index)
     return true
 
+  # Return a 'read only' instance of this filter. In fact it returns a
+  # SlicedBloomFilter with a concise bitset implementation.
   readOnlyInstance: ->
     ROslices = []
     ROslices.push(s.toConciseBitSet()) for s in @slices
@@ -126,12 +145,18 @@ class HashGenerator# {{{
 # }}}
 
 ###
-# abstract bit set class. common handy methods.
+# Base bit set class (abstract). These bitset implementations are used by the
+# bloom filters as underlying storage.
 ###
 class BitSet# {{{
+  # Turn a bit # 'b' to the set.
   add: (b) ->
+  # Check if bit 'b' is in this set. Returns boolean.
   has: (b) -> false
 
+  # Given a string representation of a binary number, convert it to a number.
+  # 
+  # Example: Given a string '1000' return 8
   bitStringAsWord: (str) ->
     b = 0
     offset = 31
@@ -140,6 +165,9 @@ class BitSet# {{{
         b = b | (parseInt(bit) << offset--)
     return b
 
+  # Given a number, return a string representation of the number in binary form.
+  #
+  # Example: Given the number 8, return '1000'.
   wordAsBitString: (w) ->
     str = ""
     for i in [31..0]
@@ -150,12 +178,26 @@ class BitSet# {{{
         str += "0"
     return str
 
-  # for a word, count the number of bits that are set to one.
+  # For a word and bit position, return true if the bit defined by the bit
+  # position is set to 1.
+  #
+  # Example: Given a word '1001' and bit position 2 and 3 would return false. Bit
+  # position 1 and 4 would return true.
   bitOfWordSet: (w,i) -> (w & (1 << i)) != 0
+
+  # For a word, count the number of bits that are set to one.
+  #
+  # Example: '1100' would return 2, '1011' returns 3.
+  #
+  # Note: 32 bit positions of the word are compared.
   bitsOfWordSet: (w) ->
     cnt = 0
     cnt++ for i in [0..31] when @bitOfWordSet(w,i)
     return cnt
+
+  # Compare two words. Returns true if all bits of the two words match.
+  #
+  # Note: 32 bit positions of the word are compared.
   wordMatches: (w,p) ->
     allMatch = true
     for i in [0..31]
@@ -206,7 +248,7 @@ class ArrayBitSet extends BitSet # {{{
 # }}}
 ###
 # CONCISE bit set.
-# unfortunately you can't use the CONCISE bit for for a writeable bloom filter so
+# unfortunately you can't use the CONCISE bit for a writeable bloom filter so
 # we are just using it for the read only version - for its space saving features.
 #
 # This bitmap is really only useful if the bloom filter is mostly full, or mostly empty. In that

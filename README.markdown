@@ -11,8 +11,8 @@ Overview
 Currently three bloom filters are supported:
 
 * sliced bloom filter: a bloom filter that is optimized to minimize false positives.
-* strict sliced bloom filter: same as above but forbids you from adding more keys than the filter supports.
-* scalable bloom filter: a bloom filter than automatically alocates additional space. It grows, while preserving your target error rate.
+* strict sliced bloom filter: a sliced bloom filter that forbids you from adding more keys than the filter supports.
+* scalable bloom filter: a bloom filter than automatically allocates additional space. It grows, while preserving your target error rate.
 * CONCISE bit map: an implementation of the [CONCISE bitmap](http://ricerca.mat.uniroma3.it/users/colanton/concise.html).
 
 Artifacts
@@ -30,4 +30,4 @@ You can use the 'cake' command to build this project.
 
 * cake test - test against jasmine test cases.
 * cake js - generate all javascript versions.
-* cake server - run a test server to view index.html.
+* cake server - run a test server to view index.html (port 3000).

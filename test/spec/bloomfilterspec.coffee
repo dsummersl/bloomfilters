@@ -227,7 +227,7 @@ describe 'ScalableBloomFilter', ->
     expect(cbs.trailingZeros(1)).toEqual(0)
     expect(cbs.trailingZeros(2)).toEqual(1)
 
-  it '42 and 110?', ->
+  it 'should hold 42 and 110 w/o colliding with other digits.', ->
     cbs = new Filters.ConciseBitSet()
     cbs.add(42)
     expect(cbs.has(42)).toBeTruthy()
